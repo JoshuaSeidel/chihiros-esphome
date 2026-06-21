@@ -1,0 +1,267 @@
+# --- RO WATERMETER ---
+#
+# Meet de kwaliteit van het RO-water voor en na het filter:
+#   Sensor 1: inkomend leidingwater (TDS, flow, temperatuur)
+#   Sensor 2: uitgaand RO-water    (TDS, flow, temperatuur)
+#
+# Hardware:
+#   ESP32-S3 DevKitC-1 N16R8 + 2x DWS-MH-01
+#   Sensor 1 aansluitschema:
+#     Rood dik  -> 3.3V (VCC sensor)
+#     Zwart     -> GND
+#     Geel      -> GPIO4 direct (flow Hall, interne pull-up)
+#     Blauw     -> GPIO5 direct (TDS ADC)
+#     Rood dun  -> 3.3V (TDS referentie)
+#     Groen     -> GPIO6 + externe 10kΩ naar 3.3V (temp NTC 50kΩ, UPSTREAM circuit)
+#   Sensor 2 aansluitschema:
+#     Rood dik  -> 3.3V (VCC sensor)
+#     Zwart     -> GND
+#     Geel      -> GPIO7 direct (flow Hall, interne pull-up)
+#     Blauw     -> GPIO8 direct (TDS ADC)
+#     Rood dun  -> 3.3V (TDS referentie)
+#     Groen     -> GPIO9 + externe 10kΩ naar 3.3V (temp NTC 50kΩ, UPSTREAM circuit)
+#
+# Status LED (onboard WS2812 GPIO48):
+#   Groen  -- TDS uitgaand < 20 ppm  (goed RO-water)
+#   Oranje -- TDS uitgaand 20-50 ppm (matig)
+#   Rood   -- TDS uitgaand > 50 ppm  (filter versleten)
+#   Blauw  -- HA niet verbonden
+
+substitutions:
+  name: aquarium-ro
+  friendly_name: aquarium-ro
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: !secret wifi_ssid_iot
+  password: !secret wifi_password_iot
+  fast_connect: enable
+  power_save_mode: NONE
+  post_connect_roaming: false
+  reboot_timeout: 0s
+
+logger:
+  hardware_uart: USB_SERIAL_JTAG
+  logs:
+    pulse_meter: WARN
+
+api:
+  encryption:
+    key: !secret encryption_key
+  on_client_connected:
+    - lambda: id(ha_verbonden) = true;
+  on_client_disconnected:
+    - lambda: id(ha_verbonden) = false;
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+web_server:
+  port: 80
+
+globals:
+  - id: ha_verbonden
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+light:
+  - platform: esp32_rmt_led_strip
+    rgb_order: GRB
+    pin: GPIO48
+    num_leds: 1
+    chipset: WS2812
+    name: "Status LED"
+    id: status_led
+    restore_mode: ALWAYS_OFF
+
+sensor:
+  # ===================== SENSOR 1: LEIDINGWATER =====================
+
+  - platform: pulse_counter
+    pin:
+      number: GPIO4
+      mode:
+        input: true
+        pullup: true
+    name: "Leidingwater flow"
+    id: sensor1_flow
+    unit_of_measurement: "L/min"
+    update_interval: 60s
+
+    filters:
+      - multiply: 0.000794
+    total:
+      name: "Leidingwater totaal"
+      unit_of_measurement: "L"
+      filters:
+        - multiply: 0.000794
+
+  - platform: adc
+    pin: GPIO5
+    id: sensor1_tds_voltage
+    name: "Leidingwater TDS voltage"
+    attenuation: 12db
+    update_interval: 5s
+    internal: false
+    filters:
+      - sliding_window_moving_average:
+          window_size: 10
+          send_every: 1
+
+  - platform: template
+    name: "Leidingwater TDS"
+    id: sensor1_tds
+    unit_of_measurement: "ppm"
+    icon: mdi:water-check
+    state_class: measurement
+    lambda: |-
+      if (id(sensor1_flow).state < 0.5f) return 0.0f;
+      float v = id(sensor1_tds_voltage).state;
+      float tds = (2.752f - v) * 631.0f;
+      return (tds < 20.0f) ? 0.0f : tds;
+    update_interval: 5s
+
+  - platform: adc
+    id: sensor1_temp_voltage
+    pin: GPIO6
+    attenuation: 12db
+    update_interval: 2s
+    internal: true
+
+  - platform: resistance
+    id: sensor1_temp_weerstand
+    sensor: sensor1_temp_voltage
+    configuration: DOWNSTREAM
+    resistor: 14kOhm
+    reference_voltage: 3.3V
+    internal: true
+
+  - platform: ntc
+    sensor: sensor1_temp_weerstand
+    name: "Leidingwater temperatuur"
+    id: sensor1_temp
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 5
+    calibration:
+      b_constant: 3950
+      reference_temperature: 25.0
+      reference_resistance: 50000
+
+  # ===================== SENSOR 2: RO WATER =====================
+
+  - platform: pulse_counter
+    pin:
+      number: GPIO7
+      mode:
+        input: true
+        pullup: true
+    name: "RO water flow"
+    id: sensor2_flow
+    unit_of_measurement: "L/min"
+    update_interval: 60s
+
+    filters:
+      - multiply: 0.000141
+    total:
+      name: "RO water totaal"
+      unit_of_measurement: "L"
+      filters:
+        - multiply: 0.000141
+
+  - platform: adc
+    pin: GPIO8
+    id: sensor2_tds_voltage
+    name: "RO water TDS voltage"
+    attenuation: 12db
+    update_interval: 5s
+    internal: false
+    filters:
+      - sliding_window_moving_average:
+          window_size: 10
+          send_every: 1
+
+  - platform: template
+    name: "RO water TDS"
+    id: sensor2_tds
+    unit_of_measurement: "ppm"
+    icon: mdi:water-check
+    state_class: measurement
+    lambda: |-
+      if (id(sensor2_flow).state < 0.05f) return 0.0f;
+      float v = id(sensor2_tds_voltage).state;
+      float tds = (2.752f - v) * 631.0f;
+      return (tds < 20.0f) ? 0.0f : tds;
+    update_interval: 5s
+
+  - platform: adc
+    id: sensor2_temp_voltage
+    pin: GPIO9
+    attenuation: 12db
+    update_interval: 2s
+    internal: true
+
+  - platform: resistance
+    id: sensor2_temp_weerstand
+    sensor: sensor2_temp_voltage
+    configuration: DOWNSTREAM
+    resistor: 14kOhm
+    reference_voltage: 3.3V
+    internal: true
+
+  - platform: ntc
+    sensor: sensor2_temp_weerstand
+    name: "RO water temperatuur"
+    id: sensor2_temp
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 5
+    calibration:
+      b_constant: 3950
+      reference_temperature: 25.0
+      reference_resistance: 50000
+
+  # ===================== DIAGNOSTICS =====================
+
+  - platform: wifi_signal
+    name: "WiFi signaal"
+    update_interval: 60s
+
+  - platform: uptime
+    name: "Uptime"
+
+interval:
+  - interval: 5s
+    then:
+      - lambda: |-
+          auto call = id(status_led).turn_on();
+          call.set_brightness(0.15f);
+          if (!id(ha_verbonden)) {
+            call.set_rgb(0.0f, 0.0f, 1.0f);
+          } else {
+            float tds = id(sensor2_tds).state;
+            if (tds < 20.0f)      call.set_rgb(0.0f, 1.0f, 0.0f);
+            else if (tds < 50.0f) call.set_rgb(1.0f, 0.5f, 0.0f);
+            else                  call.set_rgb(1.0f, 0.0f, 0.0f);
+          }
+          call.perform();
