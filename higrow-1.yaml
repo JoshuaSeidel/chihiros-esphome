@@ -113,7 +113,7 @@ sensor:
 
   - platform: copy
     source_id: battery_voltage
-    name: "Battery Level"
+    name: "Acculevel"
     id: battery_level
     device_class: battery
     unit_of_measurement: "%"
