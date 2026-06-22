@@ -61,7 +61,7 @@ sensor:
   - platform: adc
     pin: GPIO32
     id: soil_moisture
-    name: "Soil Moisture"
+    name: "Bodemvocht"
     device_class: moisture
     unit_of_measurement: "%"
     accuracy_decimals: 0
@@ -88,7 +88,7 @@ sensor:
     model: DHT11
     id: temperature_humidity
     temperature:
-      name: "Plant Temperature"
+      name: "Temperatuur"
       device_class: temperature
       unit_of_measurement: "°C"
       accuracy_decimals: 1
