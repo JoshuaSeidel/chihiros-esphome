@@ -62,6 +62,7 @@ sensor:
     pin: GPIO32
     id: soil_moisture
     name: "Soil Moisture"
+    unique_id: "higrow_1_soil_moisture"
     device_class: moisture
     unit_of_measurement: "%"
     accuracy_decimals: 0
@@ -89,11 +90,13 @@ sensor:
     id: temperature_humidity
     temperature:
       name: "Plant Temperature"
+      unique_id: "higrow_1_plant_temperature"
       device_class: temperature
       unit_of_measurement: "°C"
       accuracy_decimals: 1
     humidity:
       name: "Plant Humidity"
+      unique_id: "higrow_1_plant_humidity"
       device_class: humidity
       unit_of_measurement: "%"
       accuracy_decimals: 0
@@ -102,6 +105,7 @@ sensor:
   - platform: adc
     pin: GPIO33
     name: "Battery Voltage"
+    unique_id: "higrow_1_battery_voltage"
     id: battery_voltage
     update_interval: never
     attenuation: 12db
@@ -114,6 +118,7 @@ sensor:
   - platform: copy
     source_id: battery_voltage
     name: "Battery Level"
+    unique_id: "higrow_1_battery_level"
     id: battery_level
     device_class: battery
     unit_of_measurement: "%"
