@@ -29,6 +29,11 @@ globals:
     restore_value: true
     initial_value: 'false'
 
+  - id: ventilator_update_pending
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
   - id: ventilator_device
     type: chihiros::VentilatorDevice
     restore_value: false
