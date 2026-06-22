@@ -62,7 +62,6 @@ sensor:
     pin: GPIO32
     id: soil_moisture
     name: "Soil Moisture"
-    object_id: higrow_1_soil_moisture
     device_class: moisture
     unit_of_measurement: "%"
     accuracy_decimals: 0
@@ -90,7 +89,6 @@ sensor:
     id: temperature_humidity
     temperature:
       name: "Plant Temperature"
-      object_id: higrow_1_plant_temperature
       device_class: temperature
       unit_of_measurement: "°C"
       accuracy_decimals: 1
