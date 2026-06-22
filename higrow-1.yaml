@@ -1,18 +1,28 @@
 esphome:
   name: "higrow-1"
   on_boot:
-    priority: 200.0
-    then:
-      - switch.turn_on: power_sensors
-      - delay: 2s
-      - repeat:
-          count: 5
-          then:
-            - component.update: soil_moisture
-            - delay: 200ms
-      - component.update: temperature_humidity
-      - component.update: battery_voltage
-      - switch.turn_off: power_sensors
+    - priority: 600.0
+      then:
+        # BOOT-knop (GPIO0) vasthouden ná reset = deep sleep voorkomen voor OTA
+        - delay: 1s
+        - if:
+            condition:
+              lambda: return !digitalRead(0);
+            then:
+              - deep_sleep.prevent: deep_sleep_control
+              - logger.log: "BOOT ingedrukt — deep sleep uitgeschakeld voor OTA"
+    - priority: 200.0
+      then:
+        - switch.turn_on: power_sensors
+        - delay: 2s
+        - repeat:
+            count: 5
+            then:
+              - component.update: soil_moisture
+              - delay: 200ms
+        - component.update: temperature_humidity
+        - component.update: battery_voltage
+        - switch.turn_off: power_sensors
 
 esp32:
   board: nodemcu-32s
