@@ -25,7 +25,7 @@ safe_mode:
 deep_sleep:
   id: deep_sleep_control
   sleep_duration: 30min
-  run_duration: 30s
+  run_duration: 60s
 
 mqtt:
   broker: !secret mqtt_broker
