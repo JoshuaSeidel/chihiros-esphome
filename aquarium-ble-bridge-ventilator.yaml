@@ -92,6 +92,9 @@ script:
     mode: restart
     then:
       - delay: 1500ms
+      - globals.set:
+          id: ventilator_update_pending
+          value: 'true'
       - script.execute: ventilator_verbind_als_klaar
 
 
