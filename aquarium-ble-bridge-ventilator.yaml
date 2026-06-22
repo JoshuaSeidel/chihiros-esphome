@@ -49,8 +49,10 @@ ble_client:
               id(ntp_tijd).now(), id(ventilator_silent_mode),
               (uint8_t)id(num_ventilator_start_temp).state,
               (uint8_t)id(num_ventilator_max_temp).state,
-              (uint8_t)id(num_ventilator_snelheid).state
+              (uint8_t)id(num_ventilator_snelheid).state,
+              id(ventilator_update_pending)
             );
+            id(ventilator_update_pending) = false;
         - while:
             condition:
               lambda: return id(ventilator_device).has_next();
