@@ -24,7 +24,7 @@ safe_mode:
 
 deep_sleep:
   id: deep_sleep_control
-  sleep_duration: 4h
+  sleep_duration: 8h
   run_duration: 25s
 
 mqtt:
