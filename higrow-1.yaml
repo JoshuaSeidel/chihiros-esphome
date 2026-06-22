@@ -82,7 +82,7 @@ sensor:
           window_size: 5
           send_every: 5
       - calibrate_linear:
-          - 2.805 -> 0.0
+          - 2.95 -> 0.0
           - 1.245 -> 100.0
       - lambda: |-
           if (x < 0.0) return 0.0;
