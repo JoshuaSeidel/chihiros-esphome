@@ -114,11 +114,17 @@ switch:
       - globals.set:
           id: ventilator_silent_mode
           value: 'true'
+      - globals.set:
+          id: ventilator_update_pending
+          value: 'true'
       - script.execute: ventilator_verbind_als_klaar
     turn_off_action:
       - globals.set:
           id: ventilator_silent_mode
           value: 'false'
+      - globals.set:
+          id: ventilator_update_pending
+          value: 'true'
       - script.execute: ventilator_verbind_als_klaar
 
 button:
