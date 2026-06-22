@@ -93,7 +93,7 @@ sensor:
       unit_of_measurement: "°C"
       accuracy_decimals: 1
     humidity:
-      name: "Plant Humidity"
+      name: "Luchtvochtigheid"
       device_class: humidity
       unit_of_measurement: "%"
       accuracy_decimals: 0
