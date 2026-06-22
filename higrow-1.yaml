@@ -101,7 +101,7 @@ sensor:
 
   - platform: adc
     pin: GPIO33
-    name: "Battery Voltage"
+    name: "Accuspanning"
     id: battery_voltage
     update_interval: never
     attenuation: 12db
