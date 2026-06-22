@@ -105,7 +105,7 @@ sensor:
   - platform: adc
     pin: GPIO33
     name: "Battery Voltage"
-    unique_id: "higrow_1_battery_voltage"
+    object_id: higrow_1_battery_voltage
     id: battery_voltage
     update_interval: never
     attenuation: 12db
