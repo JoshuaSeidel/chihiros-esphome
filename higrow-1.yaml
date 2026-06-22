@@ -4,7 +4,7 @@ esphome:
     priority: 200.0
     then:
       - switch.turn_on: power_sensors
-      - delay: 2s
+      - delay: 10s
       - repeat:
           count: 5
           then:
