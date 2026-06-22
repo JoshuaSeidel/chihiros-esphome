@@ -114,7 +114,6 @@ sensor:
   - platform: copy
     source_id: battery_voltage
     name: "Battery Level"
-    object_id: higrow_1_battery_level
     id: battery_level
     device_class: battery
     unit_of_measurement: "%"
