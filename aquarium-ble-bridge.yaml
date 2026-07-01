@@ -51,7 +51,7 @@ wifi:
   reboot_timeout: 0s
 
 logger:
-  level: DEBUG
+  level: INFO
   hardware_uart: USB_SERIAL_JTAG
   logs:
     esp32_ble_tracker: DEBUG
