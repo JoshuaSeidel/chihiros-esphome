@@ -124,6 +124,14 @@ switch:
 
 button:
   - platform: template
+    name: "Dosing RTC sync"
+    id: btn_dosing_rtc_sync
+    icon: mdi:clock-sync
+    on_press:
+      - lambda: id(dosing_device).set_rtc_only();
+      - script.execute: dosing_verbind_als_klaar
+
+  - platform: template
     name: "Dosing pomp 1"
     id: btn_dosing_p1
     icon: mdi:eyedropper
