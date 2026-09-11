@@ -78,15 +78,16 @@ sequenceDiagram
 
 ### Step 1 — Fill in your secrets
 
-Create a `secrets.yaml` in the same folder:
+Create a `secrets.yaml` in the same folder. The key names match the
+[tank-monitor](https://github.com/JoshuaSeidel/tank-monitor) project so one
+`secrets.yaml` serves every board in the same ESPHome dashboard:
 
 ```yaml
 wifi_ssid: "YourWiFiNetwork"
 wifi_password: "YourWiFiPassword"
-encryption_key: ""        # generate one in ESPHome dashboard
-ota_password: "choose_a_password"
-web_user: "admin"
-web_password: "choose_a_password"
+tank_monitor_api_key: ""            # openssl rand -base64 32
+tank_monitor_ota_password: "choose_a_password"
+timezone: "EST5EDT,M3.2.0,M11.1.0"  # POSIX TZ string for your location
 ```
 
 ### Step 2 — Find your device MACs
@@ -761,4 +762,4 @@ Devices already present in your substitutions are silently ignored — only unco
 
 - State persistence across reboots: use `globals` with `restore_value: true`. The lambda `return id(my_global)` reflects current state even after a crash/reboot.
 - `script.execute` with inline `{ }` parameter syntax is unreliable from `turn_on/turn_off_action`. Use inline `ble_client.ble_write` instead.
-- Secrets required: `wifi_ssid`, `wifi_password`, `encryption_key`, `ota_password`, `web_user`, `web_password`.
+- Secrets required: `wifi_ssid`, `wifi_password`, `tank_monitor_api_key`, `tank_monitor_ota_password`, `timezone`.
