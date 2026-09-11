@@ -1,18 +1,17 @@
 # --- DOSING PUMP ---
 #
-# Protocol afgeleid uit btsnoop HCI logs (2026-06-08):
+# Protocol derived from btsnoop HCI logs (2026-06-08):
 #
 # Connect:      auth(BASE,0x01) → RTC → RTC → auth_dose1(DEVICE,0x04) → auth_dose2(DEVICE,0x05)
-# Schema:       STIR_ENABLE + STIR_SPEED + STIR_TIMER per pomp (zie helpers in chihiros_ble.h)
-# Handmatig:    STIR_SPEED [pump_idx, 0x00, 0x00, 0x00, vol_01ml]
+# Schedule:     STIR_ENABLE + STIR_SPEED + STIR_TIMER per pump (see helpers in chihiros_ble.h)
+# Manual:       STIR_SPEED [pump_idx, 0x00, 0x00, 0x00, vol_01ml]
 #
-# Tijdcodering: uur gesplitst over STIR_TIMER[2]=uur>>1 en STIR_SPEED[2]=uur&1 (alle uren 0-23)
-# Weekdays:     zelfde bitmask als WRGB2 — Ma=64 Di=32 Wo=16 Do=8 Vr=4 Za=2 Zo=1
-# Disable:      STIR_ENABLE met enable=false (0x00)
+# Hour encoding: the hour is split across STIR_TIMER[2]=hour>>1 and STIR_SPEED[2]=hour&1 (all hours 0-23)
+# Weekdays:      same bitmask as WRGB2 — Mon=64 Tue=32 Wed=16 Thu=8 Fri=4 Sat=2 Sun=1
+# Disable:       STIR_ENABLE with enable=false (0x00)
 #
-# dosing_actieve_actie:
-#   0 = schema update (alle 4 pompen)
-#   1 = handmatige dosis (dosing_actieve_pomp)
+# Manual dosing is armed by calling set_manual_dose() on the device object
+# before triggering the BLE connection; a schedule update sends all 4 pumps.
 
 globals:
   - id: dosing_device
@@ -26,18 +25,18 @@ ble_client:
       then:
         - delay: 500ms
         - lambda: |-
-            bool    actief[]   = {id(sw_dosing_schema_p1).state, id(sw_dosing_schema_p2).state,
-                                  id(sw_dosing_schema_p3).state, id(sw_dosing_schema_p4).state};
+            bool    active[]   = {id(sw_dosing_schedule_p1).state, id(sw_dosing_schedule_p2).state,
+                                  id(sw_dosing_schedule_p3).state, id(sw_dosing_schedule_p4).state};
             uint8_t weekdays[] = {(uint8_t)id(num_dosing_weekdays_p1).state, (uint8_t)id(num_dosing_weekdays_p2).state,
                                   (uint8_t)id(num_dosing_weekdays_p3).state, (uint8_t)id(num_dosing_weekdays_p4).state};
-            uint8_t uur[]      = {(uint8_t)id(num_dosing_hour_p1).state, (uint8_t)id(num_dosing_hour_p2).state,
+            uint8_t hour[]      = {(uint8_t)id(num_dosing_hour_p1).state, (uint8_t)id(num_dosing_hour_p2).state,
                                   (uint8_t)id(num_dosing_hour_p3).state, (uint8_t)id(num_dosing_hour_p4).state};
             uint8_t min_[]     = {(uint8_t)id(num_dosing_min_p1).state, (uint8_t)id(num_dosing_min_p2).state,
                                   (uint8_t)id(num_dosing_min_p3).state, (uint8_t)id(num_dosing_min_p4).state};
             float   vol[]      = {id(num_dosing_vol_p1).state, id(num_dosing_vol_p2).state,
                                   id(num_dosing_vol_p3).state, id(num_dosing_vol_p4).state};
             id(dosing_device).prepare(
-              id(ntp_tijd).now(), actief, weekdays, uur, min_, vol
+              id(ntp_time).now(), active, weekdays, hour, min_, vol
             );
         - while:
             condition:
@@ -49,116 +48,116 @@ ble_client:
                   characteristic_uuid: ${ble_tx}
                   value: !lambda return id(dosing_device).next();
               - delay: 200ms
-        - switch.turn_off: dosing_verbinding
-        - logger.log: "dosing: klaar"
+        - switch.turn_off: dosing_connection
+        - logger.log: "dosing: done"
     on_disconnect:
       then:
-        - logger.log: "dosing: verbinding verbroken"
+        - logger.log: "dosing: connection lost"
 
 script:
-  - id: dosing_verbind_als_klaar
+  - id: dosing_connect_when_ready
     then:
       - if:
           condition:
-            lambda: return id(ha_verbonden);
+            lambda: return id(ha_connected);
           then:
-            - switch.turn_on: dosing_verbinding
+            - switch.turn_on: dosing_connection
 
   - id: dosing_debounce
     mode: restart
     then:
       - delay: 1500ms
-      - script.execute: dosing_verbind_als_klaar
+      - script.execute: dosing_connect_when_ready
 
 
 switch:
   - platform: ble_client
     ble_client_id: chihiros_dosing
-    id: dosing_verbinding
+    id: dosing_connection
     internal: true
     restore_mode: RESTORE_DEFAULT_OFF
 
   - platform: template
-    name: "Dosing schema pomp 1"
-    id: sw_dosing_schema_p1
+    name: "Dosing schedule pump 1"
+    id: sw_dosing_schedule_p1
     icon: mdi:calendar-clock
     restore_mode: RESTORE_DEFAULT_ON
     optimistic: true
     on_turn_on:
-      - script.execute: dosing_verbind_als_klaar
+      - script.execute: dosing_connect_when_ready
     on_turn_off:
-      - script.execute: dosing_verbind_als_klaar
+      - script.execute: dosing_connect_when_ready
 
   - platform: template
-    name: "Dosing schema pomp 2"
-    id: sw_dosing_schema_p2
+    name: "Dosing schedule pump 2"
+    id: sw_dosing_schedule_p2
     icon: mdi:calendar-clock
     restore_mode: RESTORE_DEFAULT_OFF
     optimistic: true
     on_turn_on:
-      - script.execute: dosing_verbind_als_klaar
+      - script.execute: dosing_connect_when_ready
     on_turn_off:
-      - script.execute: dosing_verbind_als_klaar
+      - script.execute: dosing_connect_when_ready
 
   - platform: template
-    name: "Dosing schema pomp 3"
-    id: sw_dosing_schema_p3
+    name: "Dosing schedule pump 3"
+    id: sw_dosing_schedule_p3
     icon: mdi:calendar-clock
     restore_mode: RESTORE_DEFAULT_OFF
     optimistic: true
     on_turn_on:
-      - script.execute: dosing_verbind_als_klaar
+      - script.execute: dosing_connect_when_ready
     on_turn_off:
-      - script.execute: dosing_verbind_als_klaar
+      - script.execute: dosing_connect_when_ready
 
   - platform: template
-    name: "Dosing schema pomp 4"
-    id: sw_dosing_schema_p4
+    name: "Dosing schedule pump 4"
+    id: sw_dosing_schedule_p4
     icon: mdi:calendar-clock
     restore_mode: RESTORE_DEFAULT_OFF
     optimistic: true
     on_turn_on:
-      - script.execute: dosing_verbind_als_klaar
+      - script.execute: dosing_connect_when_ready
     on_turn_off:
-      - script.execute: dosing_verbind_als_klaar
+      - script.execute: dosing_connect_when_ready
 
 button:
   - platform: template
-    name: "Dosing pomp 1"
+    name: "Dosing pump 1"
     id: btn_dosing_p1
     icon: mdi:eyedropper
     on_press:
       - lambda: id(dosing_device).set_manual_dose(0, (uint8_t)(id(num_dosing_vol_p1).state * 10.0f + 0.5f));
-      - script.execute: dosing_verbind_als_klaar
+      - script.execute: dosing_connect_when_ready
 
   - platform: template
-    name: "Dosing pomp 2"
+    name: "Dosing pump 2"
     id: btn_dosing_p2
     icon: mdi:eyedropper
     on_press:
       - lambda: id(dosing_device).set_manual_dose(1, (uint8_t)(id(num_dosing_vol_p2).state * 10.0f + 0.5f));
-      - script.execute: dosing_verbind_als_klaar
+      - script.execute: dosing_connect_when_ready
 
   - platform: template
-    name: "Dosing pomp 3"
+    name: "Dosing pump 3"
     id: btn_dosing_p3
     icon: mdi:eyedropper
     on_press:
       - lambda: id(dosing_device).set_manual_dose(2, (uint8_t)(id(num_dosing_vol_p3).state * 10.0f + 0.5f));
-      - script.execute: dosing_verbind_als_klaar
+      - script.execute: dosing_connect_when_ready
 
   - platform: template
-    name: "Dosing pomp 4"
+    name: "Dosing pump 4"
     id: btn_dosing_p4
     icon: mdi:eyedropper
     on_press:
       - lambda: id(dosing_device).set_manual_dose(3, (uint8_t)(id(num_dosing_vol_p4).state * 10.0f + 0.5f));
-      - script.execute: dosing_verbind_als_klaar
+      - script.execute: dosing_connect_when_ready
 
 number:
-  # Volume per pomp (handmatig dosis + schema)
+  # Volume per pump (manual dose + schedule)
   - platform: template
-    name: "Dosing pomp 1 volume"
+    name: "Dosing pump 1 volume"
     id: num_dosing_vol_p1
     min_value: 0.5
     max_value: 25.5
@@ -172,7 +171,7 @@ number:
       - script.execute: dosing_debounce
 
   - platform: template
-    name: "Dosing pomp 2 volume"
+    name: "Dosing pump 2 volume"
     id: num_dosing_vol_p2
     min_value: 0.5
     max_value: 25.5
@@ -186,7 +185,7 @@ number:
       - script.execute: dosing_debounce
 
   - platform: template
-    name: "Dosing pomp 3 volume"
+    name: "Dosing pump 3 volume"
     id: num_dosing_vol_p3
     min_value: 0.5
     max_value: 25.5
@@ -200,7 +199,7 @@ number:
       - script.execute: dosing_debounce
 
   - platform: template
-    name: "Dosing pomp 4 volume"
+    name: "Dosing pump 4 volume"
     id: num_dosing_vol_p4
     min_value: 0.5
     max_value: 25.5
@@ -213,9 +212,9 @@ number:
     on_value:
       - script.execute: dosing_debounce
 
-  # Tijdstip schema per pomp
+  # Schedule hour per pump
   - platform: template
-    name: "Dosing schema pomp 1 uur"
+    name: "Dosing schedule pump 1 hour"
     id: num_dosing_hour_p1
     min_value: 0
     max_value: 23
@@ -229,7 +228,7 @@ number:
       - script.execute: dosing_debounce
 
   - platform: template
-    name: "Dosing schema pomp 2 uur"
+    name: "Dosing schedule pump 2 hour"
     id: num_dosing_hour_p2
     min_value: 0
     max_value: 23
@@ -243,7 +242,7 @@ number:
       - script.execute: dosing_debounce
 
   - platform: template
-    name: "Dosing schema pomp 3 uur"
+    name: "Dosing schedule pump 3 hour"
     id: num_dosing_hour_p3
     min_value: 0
     max_value: 23
@@ -257,7 +256,7 @@ number:
       - script.execute: dosing_debounce
 
   - platform: template
-    name: "Dosing schema pomp 4 uur"
+    name: "Dosing schedule pump 4 hour"
     id: num_dosing_hour_p4
     min_value: 0
     max_value: 23
@@ -270,9 +269,9 @@ number:
     on_value:
       - script.execute: dosing_debounce
 
-  # Minuten schema per pomp
+  # Schedule minute per pump
   - platform: template
-    name: "Dosing schema pomp 1 min"
+    name: "Dosing schedule pump 1 minute"
     id: num_dosing_min_p1
     min_value: 0
     max_value: 59
@@ -286,7 +285,7 @@ number:
       - script.execute: dosing_debounce
 
   - platform: template
-    name: "Dosing schema pomp 2 min"
+    name: "Dosing schedule pump 2 minute"
     id: num_dosing_min_p2
     min_value: 0
     max_value: 59
@@ -300,7 +299,7 @@ number:
       - script.execute: dosing_debounce
 
   - platform: template
-    name: "Dosing schema pomp 3 min"
+    name: "Dosing schedule pump 3 minute"
     id: num_dosing_min_p3
     min_value: 0
     max_value: 59
@@ -314,7 +313,7 @@ number:
       - script.execute: dosing_debounce
 
   - platform: template
-    name: "Dosing schema pomp 4 min"
+    name: "Dosing schedule pump 4 minute"
     id: num_dosing_min_p4
     min_value: 0
     max_value: 59
@@ -327,9 +326,9 @@ number:
     on_value:
       - script.execute: dosing_debounce
 
-  # Weekdays bitmask per pomp (Ma=64 Di=32 Wo=16 Do=8 Vr=4 Za=2 Zo=1)
+  # Weekdays bitmask per pump (Mon=64 Tue=32 Wed=16 Thu=8 Fri=4 Sat=2 Sun=1)
   - platform: template
-    name: "Dosing schema pomp 1 weekdays"
+    name: "Dosing schedule pump 1 weekdays"
     id: num_dosing_weekdays_p1
     min_value: 0
     max_value: 127
@@ -342,7 +341,7 @@ number:
       - script.execute: dosing_debounce
 
   - platform: template
-    name: "Dosing schema pomp 2 weekdays"
+    name: "Dosing schedule pump 2 weekdays"
     id: num_dosing_weekdays_p2
     min_value: 0
     max_value: 127
@@ -355,7 +354,7 @@ number:
       - script.execute: dosing_debounce
 
   - platform: template
-    name: "Dosing schema pomp 3 weekdays"
+    name: "Dosing schedule pump 3 weekdays"
     id: num_dosing_weekdays_p3
     min_value: 0
     max_value: 127
@@ -368,7 +367,7 @@ number:
       - script.execute: dosing_debounce
 
   - platform: template
-    name: "Dosing schema pomp 4 weekdays"
+    name: "Dosing schedule pump 4 weekdays"
     id: num_dosing_weekdays_p4
     min_value: 0
     max_value: 127
@@ -386,11 +385,11 @@ sensor:
     ble_client_id: chihiros_dosing
     service_uuid: ${ble_service}
     characteristic_uuid: ${ble_rx}
-    id: dosing_notificatie
-    name: "Dosing Notificatie"
+    id: dosing_notification
+    name: "Dosing notification"
     notify: true
     internal: true
     unit_of_measurement: ""
     lambda: |-
-      ESP_LOGI("dosing", "Notificatie (%d bytes): %s", (int)x.size(), chihiros::hex_dump(x).c_str());
+      ESP_LOGI("dosing", "Notification (%d bytes): %s", (int)x.size(), chihiros::hex_dump(x).c_str());
       return NAN;

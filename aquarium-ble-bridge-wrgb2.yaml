@@ -1,32 +1,33 @@
 # --- WRGB II LED ---
 #
-# Protocol afgeleid uit btsnoop HCI logs (2026-05-30):
+# Protocol derived from btsnoop HCI logs (2026-05-30):
 #
-# Connect:          AUTH(0x5a) → RTC → RTC  (lamp onthoudt schema zelf)
-# Auto activeren:   MODE(RESET_AUTO) → MODE(0x05) → SCHEDULE(params)
-# Auto deactiveren: SCHEDULE(delete: R/G/B=0xff) + MODE(0x28)  [2×]
-# Manueel:          BRIGHTNESS per kanaal
-# Manueel → auto:   MODE(RESET_AUTO) → MODE(0x05) → SCHEDULE
+# Connect:          AUTH(0x5a) → RTC → RTC  (the lamp keeps its own schedule)
+# Activate auto:    MODE(RESET_AUTO) → MODE(0x05) → SCHEDULE(params)
+# Deactivate auto:  SCHEDULE(delete: R/G/B=0xff) + MODE(0x28)  [2x]
+# Manual:           BRIGHTNESS per channel
+# Manual → auto:    MODE(RESET_AUTO) → MODE(0x05) → SCHEDULE
 #
 # SCHEDULE: hdr::DEVICE(0xa5), cmd=0x19
-#   data: [aan_h, aan_m, uit_h, uit_m, ramp_min, weekdays=0x7f, R, G, B, W, 0xff×4]
+#   data: [on_h, on_m, off_h, off_m, ramp_min, weekdays=0x7f, R, G, B, W, 0xff x4]
 #   Delete = R/G/B = 0xff
-#   W = wit-kanaal op WRGB II Pro; 0xff (SKIP) op een gewone WRGB II
-# BRIGHTNESS: hdr::BASE(0x5a), cmd=0x07, data=[kanaal, waarde]  (0=R, 1=G, 2=B, 3=W)
+#   W = white channel on the WRGB II Pro; 0xff (SKIP) on a regular WRGB II
+# BRIGHTNESS: hdr::BASE(0x5a), cmd=0x07, data=[channel, value]  (0=R, 1=G, 2=B, 3=W)
 #
-# WRGB II PRO: "true WRGB" met vier onafhankelijke kanalen. Zet wrgb2_pro: "true"
-# in de substitutions; anders wordt het wit-kanaal nooit aangesproken en blijft
-# het gedrag identiek aan de gewone WRGB II. Naamprefix DYWPRO (30-90) of
-# DYWPR120 — kanaalvolgorde en frame-encoding zijn verder gelijk.
+# WRGB II PRO: "true WRGB" with four independent channels. Set wrgb2_pro: "true"
+# in the substitutions; otherwise the white channel is never addressed and the
+# behaviour is identical to a regular WRGB II. Name prefix DYWPRO (30-90) or
+# DYWPR120 — channel order and frame encoding are otherwise the same.
 #
-# VERBINDING: niet-persistent — connect → init (schema of brightness) → disconnect
-# Lamp onthoudt schema zelf via interne RTC; BLE alleen nodig bij schema-update.
+# CONNECTION: non-persistent — connect → init (schedule or brightness) → disconnect.
+# The lamp keeps its schedule on its own internal RTC; BLE is only needed to
+# push a schedule update.
 #
-# BELANGRIJK: sequence byte mag nooit 90 (=0x5a = frame header) zijn → next_seq()
-# Ramp-waarde 90 min is ook verboden → wordt 89 min afgerond.
+# IMPORTANT: the sequence byte must never be 90 (=0x5a = frame header) → next_seq()
+# A ramp value of 90 min is likewise forbidden → rounded to 89 min.
 
 globals:
-  - id: wrgb2_auto_modus
+  - id: wrgb2_auto_mode
     type: bool
     restore_value: false
     initial_value: 'true'
@@ -35,8 +36,8 @@ globals:
     type: chihiros::WRGB2Device
     restore_value: false
 
-  # Uit substitutions; bepaalt of het wit-kanaal meegestuurd wordt.
-  - id: wrgb2_heeft_wit
+  # From substitutions; decides whether the white channel is sent.
+  - id: wrgb2_has_white
     type: bool
     restore_value: false
     initial_value: '${wrgb2_pro}'
@@ -49,14 +50,14 @@ ble_client:
         - delay: 500ms
         - lambda: |-
             id(wrgb2_device).prepare(
-              id(ntp_tijd).now(), id(wrgb2_auto_modus),
-              id(fotoperiode_start).hour, id(fotoperiode_start).minute,
-              id(fotoperiode_eind).hour,  id(fotoperiode_eind).minute,
+              id(ntp_time).now(), id(wrgb2_auto_mode),
+              id(photoperiod_start).hour, id(photoperiod_start).minute,
+              id(photoperiod_end).hour,  id(photoperiod_end).minute,
               (uint8_t)id(wrgb2_ramp).state,
-              (uint8_t)id(wrgb2_schema_rood).state,
-              (uint8_t)id(wrgb2_schema_groen).state,
-              (uint8_t)id(wrgb2_schema_blauw).state,
-              id(wrgb2_heeft_wit) ? (uint8_t)id(wrgb2_schema_wit).state
+              (uint8_t)id(wrgb2_schedule_red).state,
+              (uint8_t)id(wrgb2_schedule_green).state,
+              (uint8_t)id(wrgb2_schedule_blue).state,
+              id(wrgb2_has_white) ? (uint8_t)id(wrgb2_schedule_white).state
                                   : chihiros::data::SKIP
             );
         - while:
@@ -69,64 +70,64 @@ ble_client:
                   characteristic_uuid: ${ble_tx}
                   value: !lambda return id(wrgb2_device).next();
               - delay: 200ms
-        - switch.turn_off: wrgb2_verbinding
-        - logger.log: "wrgb2: klaar"
+        - switch.turn_off: wrgb2_connection
+        - logger.log: "wrgb2: done"
     on_disconnect:
       then:
-        - logger.log: "wrgb2: verbinding verbroken"
+        - logger.log: "wrgb2: connection lost"
 
 script:
-  - id: wrgb2_verbind_als_klaar
+  - id: wrgb2_connect_when_ready
     then:
       - if:
           condition:
-            lambda: return id(ha_verbonden);
+            lambda: return id(ha_connected);
           then:
-            - switch.turn_on: wrgb2_verbinding
+            - switch.turn_on: wrgb2_connection
 
-  # Alleen verbinden als in handmatige modus — voorkomt onnodige reconnects bij slider-wijzigingen
-  - id: wrgb2_verbind_als_klaar_manueel
+  # Only connect in manual mode — avoids needless reconnects on slider changes
+  - id: wrgb2_connect_when_ready_manual
     then:
       - if:
           condition:
-            lambda: return id(ha_verbonden) && !id(wrgb2_auto_modus);
+            lambda: return id(ha_connected) && !id(wrgb2_auto_mode);
           then:
-            - switch.turn_on: wrgb2_verbinding
+            - switch.turn_on: wrgb2_connection
 
-  - id: wrgb2_debounce_manueel
+  - id: wrgb2_debounce_manual
     mode: restart
     then:
       - delay: 1500ms
-      - script.execute: wrgb2_verbind_als_klaar_manueel
+      - script.execute: wrgb2_connect_when_ready_manual
 
 
 switch:
   - platform: ble_client
     ble_client_id: chihiros_wrgb2
-    id: wrgb2_verbinding
+    id: wrgb2_connection
     internal: true
     restore_mode: RESTORE_DEFAULT_OFF
 
   - platform: template
-    name: "WRGB2 auto modus"
+    name: "WRGB2 auto mode"
     id: sw_wrgb2_auto
     icon: mdi:clock-outline
     restore_mode: ALWAYS_ON
-    lambda: return id(wrgb2_auto_modus);
+    lambda: return id(wrgb2_auto_mode);
     turn_on_action:
       - globals.set:
-          id: wrgb2_auto_modus
+          id: wrgb2_auto_mode
           value: 'true'
-      - script.execute: wrgb2_verbind_als_klaar
+      - script.execute: wrgb2_connect_when_ready
     turn_off_action:
       - globals.set:
-          id: wrgb2_auto_modus
+          id: wrgb2_auto_mode
           value: 'false'
-      - script.execute: wrgb2_verbind_als_klaar
+      - script.execute: wrgb2_connect_when_ready
 
 number:
   - platform: template
-    name: "WRGB2 rood"
+    name: "WRGB2 red"
     id: num_wrgb2_r
     min_value: 0
     max_value: 100
@@ -137,10 +138,10 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     on_value:
-      - script.execute: wrgb2_debounce_manueel
+      - script.execute: wrgb2_debounce_manual
 
   - platform: template
-    name: "WRGB2 groen"
+    name: "WRGB2 green"
     id: num_wrgb2_g
     min_value: 0
     max_value: 100
@@ -151,10 +152,10 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     on_value:
-      - script.execute: wrgb2_debounce_manueel
+      - script.execute: wrgb2_debounce_manual
 
   - platform: template
-    name: "WRGB2 blauw"
+    name: "WRGB2 blue"
     id: num_wrgb2_b
     min_value: 0
     max_value: 100
@@ -165,11 +166,11 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     on_value:
-      - script.execute: wrgb2_debounce_manueel
+      - script.execute: wrgb2_debounce_manual
 
-  # Alleen zinvol op een WRGB II Pro (wrgb2_pro: "true").
+  # Only meaningful on a WRGB II Pro (wrgb2_pro: "true").
   - platform: template
-    name: "WRGB2 wit"
+    name: "WRGB2 white"
     id: num_wrgb2_w
     min_value: 0
     max_value: 100
@@ -180,10 +181,10 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     on_value:
-      - script.execute: wrgb2_debounce_manueel
+      - script.execute: wrgb2_debounce_manual
 
   - platform: template
-    name: "WRGB2 schema ramp"
+    name: "WRGB2 schedule ramp"
     id: wrgb2_ramp
     min_value: 0
     max_value: 150
@@ -195,8 +196,8 @@ number:
     icon: mdi:sun-angle
 
   - platform: template
-    name: "WRGB2 schema rood"
-    id: wrgb2_schema_rood
+    name: "WRGB2 schedule red"
+    id: wrgb2_schedule_red
     min_value: 0
     max_value: 100
     step: 1
@@ -207,8 +208,8 @@ number:
     icon: mdi:led-on
 
   - platform: template
-    name: "WRGB2 schema groen"
-    id: wrgb2_schema_groen
+    name: "WRGB2 schedule green"
+    id: wrgb2_schedule_green
     min_value: 0
     max_value: 100
     step: 1
@@ -219,8 +220,8 @@ number:
     icon: mdi:led-on
 
   - platform: template
-    name: "WRGB2 schema blauw"
-    id: wrgb2_schema_blauw
+    name: "WRGB2 schedule blue"
+    id: wrgb2_schedule_blue
     min_value: 0
     max_value: 100
     step: 1
@@ -230,10 +231,10 @@ number:
     unit_of_measurement: "%"
     icon: mdi:led-on
 
-  # Alleen zinvol op een WRGB II Pro (wrgb2_pro: "true").
+  # Only meaningful on a WRGB II Pro (wrgb2_pro: "true").
   - platform: template
-    name: "WRGB2 schema wit"
-    id: wrgb2_schema_wit
+    name: "WRGB2 schedule white"
+    id: wrgb2_schedule_white
     min_value: 0
     max_value: 100
     step: 1
@@ -245,11 +246,11 @@ number:
 
 button:
   - platform: template
-    name: "WRGB2 schema toepassen"
-    id: btn_wrgb2_schema
+    name: "WRGB2 apply schedule"
+    id: btn_wrgb2_schedule
     icon: mdi:clock-edit
     on_press:
-      - script.execute: wrgb2_verbind_als_klaar
+      - script.execute: wrgb2_connect_when_ready
 
   - platform: template
     name: "WRGB2 RTC sync"
@@ -257,7 +258,7 @@ button:
     icon: mdi:clock-sync
     on_press:
       - lambda: id(wrgb2_device).set_rtc_only();
-      - script.execute: wrgb2_verbind_als_klaar
+      - script.execute: wrgb2_connect_when_ready
 
 sensor:
   - platform: ble_client
@@ -265,11 +266,11 @@ sensor:
     ble_client_id: chihiros_wrgb2
     service_uuid: ${ble_service}
     characteristic_uuid: ${ble_rx}
-    id: wrgb2_notificatie
-    name: "WRGB2 Notificatie"
+    id: wrgb2_notification
+    name: "WRGB2 notification"
     notify: true
     internal: true
     unit_of_measurement: ""
     lambda: |-
-      ESP_LOGI("wrgb2", "Notificatie (%d bytes): %s", (int)x.size(), chihiros::hex_dump(x).c_str());
+      ESP_LOGI("wrgb2", "Notification (%d bytes): %s", (int)x.size(), chihiros::hex_dump(x).c_str());
       return NAN;

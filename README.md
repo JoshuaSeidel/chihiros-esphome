@@ -59,12 +59,12 @@ sequenceDiagram
 |---|---|
 | CO2 Controller | When schedule/times change (button or HA entity) |
 | WRGB2 Light | When schedule/colors change (button or HA entity) |
-| Magnetic Stirrer | When "Roerder schema toepassen" button is pressed |
+| Magnetic Stirrer | When "Stirrer apply schedule" button is pressed |
 | Doctor Mate | When TDS/volume settings change |
 | Cooling Fan | **Every 5 minutes** (for temperature readings) + when settings change |
 | Dosing Pump | When a schedule changes or a manual dose button is pressed |
 
-> **No auto-connect on boot.** Devices only connect via explicit button press or HA entity change. This prevents simultaneous BLE connections that can cause HCI 0x07 (Memory Full) crashes on the ESP32-S3. After a reboot, press each device's "schema toepassen" button to push the current config.
+> **No auto-connect on boot.** Devices only connect via explicit button press or HA entity change. This prevents simultaneous BLE connections that can cause HCI 0x07 (Memory Full) crashes on the ESP32-S3. After a reboot, press each device's "apply schedule" button to push the current config.
 
 **Benefit**: the BLE scanner is almost always free. Toggling a stirrer channel or pushing a new CO2 schedule typically completes within 2–4 seconds.
 
@@ -107,16 +107,16 @@ In `aquarium-ble-bridge.yaml`, uncomment the packages you need:
 
 ```yaml
 packages:
-  schema:     !include aquarium-ble-bridge-schema.yaml     # fotoperiode times (shared by CO2 + WRGB2)
+  schedule:   !include aquarium-ble-bridge-schedule.yaml     # photoperiod times (shared by CO2 + WRGB2)
   co2:        !include aquarium-ble-bridge-co2.yaml
-  roerder:    !include aquarium-ble-bridge-roerder.yaml
-  ventilator: !include aquarium-ble-bridge-ventilator.yaml
+  stirrer:    !include aquarium-ble-bridge-stirrer.yaml
+  fan:        !include aquarium-ble-bridge-fan.yaml
   doctor:     !include aquarium-ble-bridge-doctor.yaml
   wrgb2:      !include aquarium-ble-bridge-wrgb2.yaml
   dosing:     !include aquarium-ble-bridge-dosing.yaml
 ```
 
-`schema.yaml` defines the shared `fotoperiode_start` / `fotoperiode_eind` datetimes and the `co2_prestart` offset — used by both CO2 and WRGB2.
+`schedule.yaml` defines the shared `photoperiod_start` / `photoperiod_end` datetimes and the `co2_prestart` offset — used by both CO2 and WRGB2.
 
 ### Step 4 — Flash
 
@@ -128,13 +128,13 @@ docker exec esphome esphome upload /config/aquarium-ble-bridge.yaml
 
 ### Step 5 — Check the logs
 
-After booting, no BLE connections are opened automatically. Press each device's "schema toepassen" button to push the current configuration. A successful sync looks like:
+After booting, no BLE connections are opened automatically. Press each device's "apply schedule" button to push the current configuration. A successful sync looks like:
 
 ```
-[I][co2]: klaar
-[I][co2]: verbinding verbroken
-[I][wrgb2]: klaar
-[I][wrgb2]: verbinding verbroken
+[I][co2]: done
+[I][co2]: connection lost
+[I][wrgb2]: done
+[I][wrgb2]: connection lost
 ```
 
 This connect → configure → disconnect pattern is expected and correct. Avoid pressing multiple buttons at the same time — simultaneous BLE connections can cause HCI 0x07 (Memory Full) crashes.
@@ -147,7 +147,7 @@ This connect → configure → disconnect pattern is expected and correct. Avoid
 - **Framework**: `esp-idf` (required for reliable multi-client BLE)
 - **BLE connections**: up to 8 (`max_connections: 8`, `CONFIG_BT_CTRL_BLE_MAX_ACT: "10"`)
 - **BLE scan**: `interval: 320ms`, `window: 60ms`, continuous
-- **Tijd**: SNTP (`platform: sntp`, id `ntp_tijd`) — synchroniseert direct van NTP-servers, geen HA-tussenlaag. Tijdzone: `CET-1CEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00`. `ntp_tijd.now().hour` geeft altijd correcte lokale tijd.
+- **Time**: SNTP (`platform: sntp`, id `ntp_time`) — syncs directly from NTP servers, no HA in between. Timezone: `CET-1CEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00`. `ntp_time.now().hour` always returns correct local time.
 
 > **BLE 5.0 required.** Chihiros devices use BLE 5.0 extended advertising — a classic ESP32 (BLE 4.2) will not detect them at all. Use an **ESP32-S3** (or ESP32-C3/C6). The S3 is recommended for its extra RAM, which is needed when running the BLE scanner alongside multiple client connections.
 
@@ -180,7 +180,7 @@ chihiros::hdr::DEVICE // 0xa5 — stirrer, fan threshold, Doctor Mate, WRGB2 sch
 chihiros::cmd::AUTH        // 0x04
 chihiros::cmd::RTC         // 0x09
 chihiros::cmd::MODE        // 0x05
-chihiros::cmd::SCHEMA      // 0x16 — CO2 schedule slots
+chihiros::cmd::CO2_SCHEDULE      // 0x16 — CO2 schedule slots
 chihiros::cmd::BRIGHTNESS  // 0x07 — WRGB2 per-channel brightness
 chihiros::cmd::FAN_SPEED   // 0x07 — fan manual speed
 chihiros::cmd::SETTINGS    // 0x01 — Doctor Mate TDS / volume
@@ -190,7 +190,7 @@ chihiros::cmd::STIR_TIMER  // 0x15
 chihiros::cmd::STIR_SPEED  // 0x1b
 chihiros::cmd::STIR_ENABLE // 0x20
 chihiros::cmd::STIR_APPLY  // 0x1f
-chihiros::cmd::CMD_2A      // 0x2a — stirrer persistent schema settings (lead time + speed)
+chihiros::cmd::CMD_2A      // 0x2a — stirrer persistent schedule settings (lead time + speed)
 chihiros::cmd::TEMP_THRESH // 0x21 — fan temperature threshold
 ```
 
@@ -199,7 +199,7 @@ chihiros::cmd::TEMP_THRESH // 0x21 — fan temperature threshold
 chihiros::data::AUTH_BASE    // 0x01
 chihiros::data::AUTH_EXT1    // 0x06 — fan extra auth step 1
 chihiros::data::AUTH_EXT2    // 0x08 — fan extra auth step 2
-chihiros::data::RESET_SCHEMA // 0x07 — evaluate schedule now
+chihiros::data::RESET_SCHEDULE // 0x07 — evaluate schedule now
 chihiros::data::RESET_AUTO   // 0x12 — switch to auto mode
 chihiros::data::SILENT_ON    // 0x22 — fan mode byte (sequence matters, see Cooling Fan section)
 chihiros::data::SILENT_OFF   // 0x23 — fan mode byte (sequence matters, see Cooling Fan section)
@@ -216,11 +216,11 @@ chihiros::data::WRGB_B       // 0x02 — WRGB2 blue channel index
 ```cpp
 chihiros::pakket(header, cmd, {data...}, seq)
 chihiros::pakket(header, cmd, std::vector<uint8_t>, seq)
-chihiros::rtc_pakket(ESPTime t, seq)
-chihiros::roerder_toggle(seq, channel, on)          // STIR_TOGGLE — direct on/off
-chihiros::stir_enable(channel, seq)                // STIR_ENABLE — activate channel in schema
+chihiros::rtc_packet(ESPTime t, seq)
+chihiros::stirrer_toggle(seq, channel, on)          // STIR_TOGGLE — direct on/off
+chihiros::stir_enable(channel, seq)                // STIR_ENABLE — activate channel in schedule
 chihiros::stir_weekdays(channel, weekdays, seq)    // STIR_SPEED byte[1] = weekdays bitmask (0x7f = every day)
-chihiros::stir_schema(channel, voorloop_sec, snelheid_0_20, seq)  // CMD_2A — lead time + speed (schema + Run mode)
+chihiros::stir_schedule(channel, lead_sec, speed_0_20, seq)  // CMD_2A — lead time + speed (schedule + Run mode)
 chihiros::stir_timer(channel, hour, minute, duration_sec, seq)    // STIR_TIMER mode 3 — daily clock schedule
 chihiros::stir_apply(seq)                          // STIR_APPLY — save config to device
 ```
@@ -243,9 +243,9 @@ on_connect:
   - delay: 500ms
   - lambda: |-
       id(co2_device).prepare(
-        id(ntp_tijd).now(), id(co2_schema_actief),
-        id(fotoperiode_start).hour, id(fotoperiode_start).minute,
-        id(fotoperiode_eind).hour,  id(fotoperiode_eind).minute,
+        id(ntp_time).now(), id(co2_schedule_active),
+        id(photoperiod_start).hour, id(photoperiod_start).minute,
+        id(photoperiod_end).hour,  id(photoperiod_end).minute,
         (int)id(co2_prestart).state
       );
   - while:
@@ -257,19 +257,19 @@ on_connect:
             characteristic_uuid: ${ble_tx}
             value: !lambda return id(co2_device).next();
         - delay: 200ms
-  - switch.turn_off: co2_verbinding
+  - switch.turn_off: co2_connection
 ```
 
 ### Device classes
 
 | Class | `prepare()` parameters |
 |---|---|
-| `CO2Device` | `time, schema_actief, fp_uur, fp_min, eind_uur, eind_min, prestart_min` |
-| `VentilatorDevice` | `time, silent_mode, start_temp, max_temp, speed` |
+| `CO2Device` | `time, schedule_active, fp_hour, fp_min, end_hour, end_min, prestart_min` |
+| `FanDevice` | `time, silent_mode, start_temp, max_temp, speed` |
 | `DoctorDevice` | `time, tds_ppm, volume_l` |
-| `WRGB2Device` | `time, auto_modus, fp_start_h, fp_start_m, fp_eind_h, fp_eind_m, ramp_min, r, g, b` |
-| `DosingDevice` | `time, actief[4], weekdays[4], uur[4], min[4], vol[4]` |
-| `RoerderDevice` | `time, uur[4], min[4], vrlp[4], spd[4], dur[4], k0, k1, k2, k3` |
+| `WRGB2Device` | `time, auto_mode, fp_start_h, fp_start_m, fp_end_h, fp_end_m, ramp_min, r, g, b` |
+| `DosingDevice` | `time, active[4], weekdays[4], uur[4], min[4], vol[4]` |
+| `StirrerDevice` | `time, uur[4], min[4], vrlp[4], spd[4], dur[4], k0, k1, k2, k3` |
 
 ### Special flags
 
@@ -316,19 +316,19 @@ sequenceDiagram
     ESP->>CO2: AUTH
     ESP->>CO2: RTC
     ESP->>CO2: RTC (2nd)
-    ESP->>CO2: RESET_SCHEMA (clears all slots)
-    alt schema active
-        ESP->>CO2: SCHEMA slot → CO2_ON  at (fotoperiode_start − prestart)
-        ESP->>CO2: SCHEMA slot → CO2_OFF at fotoperiode_eind
-    else schema inactive
-        ESP->>CO2: SCHEMA slot → CO2_EMPTY
-        ESP->>CO2: SCHEMA slot → CO2_EMPTY
+    ESP->>CO2: RESET_SCHEDULE (clears all slots)
+    alt schedule active
+        ESP->>CO2: CO2_SCHEDULE slot → CO2_ON  at (photoperiod_start − prestart)
+        ESP->>CO2: CO2_SCHEDULE slot → CO2_OFF at photoperiod_end
+    else schedule inactive
+        ESP->>CO2: CO2_SCHEDULE slot → CO2_EMPTY
+        ESP->>CO2: CO2_SCHEDULE slot → CO2_EMPTY
     end
     ESP->>CO2: BLE disconnect
     Note over CO2: Opens/closes valve autonomously on internal RTC
 ```
 
-`RESET_SCHEMA` clears all existing slots — no old values need to be tracked when times change.
+`RESET_SCHEDULE` clears all existing slots — no old values need to be tracked when times change.
 
 > **Note:** The CO2 valve physically actuates (audible click) on every connect. This is normal — the controller briefly opens and then closes the valve as it evaluates the new schedule against the current time. Avoid connecting more often than necessary.
 
@@ -341,7 +341,7 @@ Frame format: [header] 01 [len] 00 [seq] [cmd] [data...] [XOR-CRC]
 1. auth           5a 01 06 00 01 04 01 03
 2. rtc            5a 01 0b 00 02 09 1a 06 01 0e 1e 00 0c
 3. rtc (2nd)      5a 01 0b 00 03 09 1a 06 01 0e 1e 00 0d
-4. reset_schema   5a 01 08 00 04 05 07 ff ff 0f
+4. reset_schedule   5a 01 08 00 04 05 07 ff ff 0f
 5. schema ON      5a 01 08 00 05 16 08 00 64 76   08:00 CO2_ON  (0x64)
 6. schema OFF     5a 01 08 00 06 16 16 00 00 0f   22:00 CO2_OFF (0x00)
 
@@ -366,7 +366,7 @@ sequenceDiagram
     loop for each channel 0..3
         ESP->>STI: STIR_ENABLE  (channel)
         ESP->>STI: STIR_SPEED   (channel, weekdays=0x7f)
-        ESP->>STI: CMD_2A       (channel, voorloop_sec, snelheid_0-20)
+        ESP->>STI: CMD_2A       (channel, lead_sec, speed_0-20)
         ESP->>STI: STIR_TIMER   (channel, 0x03, hour, minute, duration_sec)
     end
     ESP->>STI: STIR_APPLY
@@ -401,7 +401,7 @@ The Chihiros app uses mode `0x03` (clock schedule) in the Schema tab. Mode `0x00
 **CMD_2A** saves the lead time and speed persistently per channel (survives power cycles):
 
 ```
-CMD_2A: [channel, 0x00, voorlooptijd_sec, snelheid_0-20]
+CMD_2A: [channel, 0x00, lead_sec, speed_0-20]
 ```
 
 Verified from btsnoop 2026-06-11: ch=2, voorlooptijd=36s, speed=20 → `02 00 24 14`; same channel, speed=2 → `02 00 24 02`.
@@ -584,7 +584,7 @@ sequenceDiagram
     ESP->>WRG: RTC (2nd)
     WRG-->>ESP: Notification (current state)
     alt auto mode
-        ESP->>WRG: RESET_SCHEMA
+        ESP->>WRG: RESET_SCHEDULE
         ESP->>WRG: SCHEDULE (on_h, on_m, off_h, off_m, ramp_min, weekdays, R, G, B)
         ESP->>WRG: RESET_AUTO (switch to auto mode)
         ESP->>WRG: RTC (triggers immediate schedule evaluation)
@@ -625,7 +625,7 @@ Note: seq must never be 0x5a — use next_seq() which skips value 90.
 Auto schedule:
 1. rtc            5a 01 0b 00 01 09 1a 06 01 0e 1e 00 0f
 2. rtc (2nd)      5a 01 0b 00 02 09 1a 06 01 0e 1e 00 0c
-3. reset_schema   5a 01 08 00 03 05 07 ff ff 08
+3. reset_schedule   5a 01 08 00 03 05 07 ff ff 08
 4. wrgb_schedule  a5 01 13 00 04 19 09 00 16 00 1e 7f 3d 2d 50 ff ff ff ff ff ce
                                           ^^ ^^             ^^                      on  09:00
                                                 ^^ ^^                               off 22:00
@@ -729,7 +729,7 @@ Every Chihiros device advertises a BLE name in the format `DY{type}{MAC}` — th
 ```
 [I][ble_scan]: Chihiros found: WRGB2 light         -> set as wrgb2_mac | MAC=CF:20:3B:6D:17:C1 RSSI=-62
 [I][ble_scan]: Chihiros found: CO2 controller      -> set as co2_mac   | MAC=CC:A0:27:8E:79:E9 RSSI=-58
-[I][ble_scan]: Chihiros found: Magnetic stirrer    -> set as roerder_mac | MAC=D3:A1:88:0F:7C:42 RSSI=-71
+[I][ble_scan]: Chihiros found: Magnetic stirrer    -> set as stirrer_mac | MAC=D3:A1:88:0F:7C:42 RSSI=-71
 ```
 
 ```mermaid
@@ -748,8 +748,8 @@ Known prefixes:
 |---|---|---|
 | `DYNT90` | WRGB2 light | `wrgb2_mac` |
 | `DYPCO2` | CO2 controller | `co2_mac` |
-| `DYMIX` | Magnetic stirrer | `roerder_mac` |
-| `DYNFAN` | Cooling fan | `ventilator_mac` |
+| `DYMIX` | Magnetic stirrer | `stirrer_mac` |
+| `DYNFAN` | Cooling fan | `fan_mac` |
 | `DYNDOC` | Doctor Mate | `doctor_mac` |
 | `DYDOSE` | Dosing pump | `dosing_mac` |
 

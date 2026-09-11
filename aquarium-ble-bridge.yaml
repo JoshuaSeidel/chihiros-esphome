@@ -1,27 +1,27 @@
-# --- SAMENVATTING ---
-# Chihiros BLE bridge — CO2 controller + magnetisch roerder + koelventilator + Doctor Mate + WRGB2
-# Configuratie gesplitst in packages per device:
+# --- OVERVIEW ---
+# Chihiros BLE bridge — CO2 controller + magnetic stirrer + cooling fan + Doctor Mate + WRGB2
+# Configuration is split into one package per device:
 #   aquarium-ble-bridge-co2.yaml
-#   aquarium-ble-bridge-roerder.yaml
-#   aquarium-ble-bridge-ventilator.yaml
+#   aquarium-ble-bridge-stirrer.yaml
+#   aquarium-ble-bridge-fan.yaml
 #   aquarium-ble-bridge-doctor.yaml
 #   aquarium-ble-bridge-wrgb2.yaml
 
 substitutions:
   name: aquarium-ble-bridge
   friendly_name: aquarium-ble-bridge
-  # MAC-adressen
+  # MAC addresses
   co2_mac: "CC:A0:27:8E:79:E9"
-  roerder_mac: "EC:DE:A6:A0:61:1D"
-  ventilator_mac: "D7:65:2F:EF:CC:BB"
+  stirrer_mac: "EC:DE:A6:A0:61:1D"
+  fan_mac: "D7:65:2F:EF:CC:BB"
   doctor_mac: "CC:A0:E9:07:34:C6"
   wrgb2_mac:  "CF:20:3B:6D:17:C1"
-  # WRGB II Pro (DYWPRO30-90 / DYWPR120) heeft een vierde, onafhankelijk
-  # wit-kanaal. Zet op "true" voor een Pro; "false" laat de frames voor een
-  # gewone WRGB II byte-voor-byte ongewijzigd.
+  # The WRGB II Pro (DYWPRO30-90 / DYWPR120) has a fourth, independent white
+  # channel. Set to "true" for a Pro; "false" leaves every frame byte-for-byte
+  # identical for a regular WRGB II.
   wrgb2_pro:  "false"
   dosing_mac: "F1:C0:D0:B8:E9:5A"
-  # Nordic UART Service UUIDs (gedeeld door alle Chihiros devices)
+  # Nordic UART Service UUIDs (shared by every Chihiros device)
   ble_service: "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
   ble_tx: "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
   ble_rx: "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
@@ -62,7 +62,7 @@ logger:
     ble_client: DEBUG
 
 globals:
-  - id: ha_verbonden
+  - id: ha_connected
     type: bool
     restore_value: false
     initial_value: 'false'
@@ -71,7 +71,7 @@ api:
   encryption:
     key: !secret encryption_key
   on_client_connected:
-    - lambda: id(ha_verbonden) = true;
+    - lambda: id(ha_connected) = true;
 
 ota:
   - platform: esphome
@@ -79,7 +79,7 @@ ota:
 
 time:
   - platform: sntp
-    id: ntp_tijd
+    id: ntp_time
     timezone: CET-1CEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00
     servers:
       - 0.nl.pool.ntp.org
@@ -101,26 +101,26 @@ esp32_ble_tracker:
             std::string name = x.get_name();
             std::string mac = x.address_str();
             if (name.rfind("DY", 0) != 0) return;
-            if (mac == "${co2_mac}" || mac == "${roerder_mac}" ||
-                mac == "${ventilator_mac}" || mac == "${doctor_mac}" ||
+            if (mac == "${co2_mac}" || mac == "${stirrer_mac}" ||
+                mac == "${fan_mac}" || mac == "${doctor_mac}" ||
                 mac == "${wrgb2_mac}" || mac == "${dosing_mac}") return;
-            // Identificeer apparaattype uit naam-prefix (DY{type}{MAC_zonder_dubbele_punten})
+            // Identify the device type from the name prefix (DY{type}{MAC_without_colons})
             const char* type = "Unknown type";
             if      (name.rfind("DYNT90", 0) == 0) type = "WRGB2 light         -> set as wrgb2_mac";
             else if (name.rfind("DYWPR",  0) == 0) type = "WRGB2 Pro light     -> set as wrgb2_mac, wrgb2_pro: true";
             else if (name.rfind("DYPCO2", 0) == 0) type = "CO2 controller      -> set as co2_mac";
-            else if (name.rfind("DYMIX",  0) == 0) type = "Magnetic stirrer    -> set as roerder_mac";
-            else if (name.rfind("DYNFAN", 0) == 0) type = "Cooling fan         -> set as ventilator_mac";
+            else if (name.rfind("DYMIX",  0) == 0) type = "Magnetic stirrer    -> set as stirrer_mac";
+            else if (name.rfind("DYNFAN", 0) == 0) type = "Cooling fan         -> set as fan_mac";
             else if (name.rfind("DYNDOC", 0) == 0) type = "Doctor Mate         -> set as doctor_mac";
             else if (name.rfind("DYDOSE", 0) == 0) type = "Dosing pump         -> set as dosing_mac";
             ESP_LOGI("ble_scan", "Chihiros found: %s | MAC=%s RSSI=%d",
               type, mac.c_str(), x.get_rssi());
 
 packages:
-  schema:     !include aquarium-ble-bridge-schema.yaml
-  roerder:    !include aquarium-ble-bridge-roerder.yaml
-  ventilator: !include aquarium-ble-bridge-ventilator.yaml
-  doctor:     !include aquarium-ble-bridge-doctor.yaml
-  wrgb2:      !include aquarium-ble-bridge-wrgb2.yaml
-  co2:        !include aquarium-ble-bridge-co2.yaml
-  dosing:     !include aquarium-ble-bridge-dosing.yaml
+  schedule: !include aquarium-ble-bridge-schedule.yaml
+  stirrer:  !include aquarium-ble-bridge-stirrer.yaml
+  fan:      !include aquarium-ble-bridge-fan.yaml
+  doctor:   !include aquarium-ble-bridge-doctor.yaml
+  wrgb2:    !include aquarium-ble-bridge-wrgb2.yaml
+  co2:      !include aquarium-ble-bridge-co2.yaml
+  dosing:   !include aquarium-ble-bridge-dosing.yaml

@@ -1,0 +1,219 @@
+# --- COOLING FAN ---
+#
+# The Chihiros cooling fan cools the aquarium water by evaporation. It
+# measures water and room temperature itself and regulates its own speed.
+#
+# Connection sequence on every BLE connect:
+#   1. Auth            — standard Chihiros handshake
+#   2. RTC x 2         — sync the clock twice (matches the app)
+#   3. Extra auth [06] — fan-specific extra authentication
+#   4. Extra auth [08] — second fan-specific auth
+#   5. Mode init       — sends the stored silent-mode setting
+#   6. Threshold       — water temperature start/max
+#   7. Speed           — 0 = device auto mode (its own thermostat), >0 = manual override
+#   8. Wait            — 2s for notifications from the device
+#   9. Disconnect
+#
+# Notifications from the device (byte positions in the received frame):
+#   byte[5]       = fan speed (%)
+#   byte[6:7]/256 = room temperature (°C)
+#   byte[11]/10   = water temperature (°C)
+#   byte[12]      = humidity (%)
+#
+# CONNECTION: periodic (every 5 min) — connects for a temperature read, then
+# disconnects. The fan regulates itself from its temperature thresholds; BLE
+# is only for monitoring and configuration.
+
+globals:
+  - id: fan_silent_mode
+    type: bool
+    restore_value: true
+    initial_value: 'false'
+
+  - id: fan_device
+    type: chihiros::FanDevice
+    restore_value: false
+
+ble_client:
+  - mac_address: ${fan_mac}
+    id: chihiros_fan
+    on_connect:
+      then:
+        - delay: 500ms
+        - lambda: |-
+            id(fan_device).prepare(
+              id(ntp_time).now(), id(fan_silent_mode),
+              (uint8_t)id(num_fan_start_temp).state,
+              (uint8_t)id(num_fan_max_temp).state,
+              (uint8_t)id(num_fan_speed).state
+            );
+        - while:
+            condition:
+              lambda: return id(fan_device).has_next();
+            then:
+              - ble_client.ble_write:
+                  id: chihiros_fan
+                  service_uuid: ${ble_service}
+                  characteristic_uuid: ${ble_tx}
+                  value: !lambda return id(fan_device).next();
+              - delay: 200ms
+        - delay: 2000ms
+        - switch.turn_off: fan_connection
+        - logger.log: "fan: done"
+    on_disconnect:
+      then:
+        - logger.log: "fan: connection lost"
+
+interval:
+  - interval: 5min
+    then:
+      - if:
+          condition:
+            lambda: return id(ha_connected) && strcmp("${fan_mac}", "00:00:00:00:00:00") != 0;
+          then:
+            - switch.turn_on: fan_connection
+
+script:
+  - id: fan_connect_when_ready
+    then:
+      - if:
+          condition:
+            lambda: return id(ha_connected);
+          then:
+            - switch.turn_on: fan_connection
+
+  - id: fan_debounce
+    mode: restart
+    then:
+      - delay: 1500ms
+      - script.execute: fan_connect_when_ready
+
+
+switch:
+  - platform: ble_client
+    ble_client_id: chihiros_fan
+    id: fan_connection
+    internal: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: template
+    name: "Fan silent mode"
+    id: sw_fan_silent
+    icon: mdi:volume-off
+    lambda: return id(fan_silent_mode);
+    turn_on_action:
+      - globals.set:
+          id: fan_silent_mode
+          value: 'true'
+      - script.execute: fan_connect_when_ready
+    turn_off_action:
+      - globals.set:
+          id: fan_silent_mode
+          value: 'false'
+      - script.execute: fan_connect_when_ready
+
+button:
+  - platform: template
+    name: "Fan RTC sync"
+    id: btn_fan_rtc_sync
+    icon: mdi:clock-sync
+    on_press:
+      - script.execute: fan_connect_when_ready
+
+number:
+  - platform: template
+    name: "Fan start temperature"
+    id: num_fan_start_temp
+    min_value: 18
+    max_value: 32
+    step: 1
+    initial_value: 24
+    restore_value: true
+    icon: mdi:thermometer-water
+    unit_of_measurement: "°C"
+    optimistic: true
+    on_value:
+      - script.execute: fan_debounce
+
+  - platform: template
+    name: "Fan max cooling"
+    id: num_fan_max_temp
+    min_value: 20
+    max_value: 35
+    step: 1
+    initial_value: 28
+    restore_value: true
+    icon: mdi:thermometer-high
+    unit_of_measurement: "°C"
+    optimistic: true
+    on_value:
+      - script.execute: fan_debounce
+
+  - platform: template
+    name: "Fan manual speed"
+    id: num_fan_speed
+    min_value: 0
+    max_value: 20
+    step: 1
+    initial_value: 0
+    restore_value: false
+    icon: mdi:fan
+    unit_of_measurement: ""
+    optimistic: true
+    on_value:
+      - script.execute: fan_debounce
+
+sensor:
+  - platform: ble_client
+    type: characteristic
+    ble_client_id: chihiros_fan
+    service_uuid: ${ble_service}
+    characteristic_uuid: ${ble_rx}
+    id: fan_notification
+    name: "Fan notification"
+    notify: true
+    internal: true
+    unit_of_measurement: ""
+    lambda: |-
+      auto d = chihiros::parse_fan_notification(x);
+      if (d.valid) {
+        id(sensor_fan_fan_speed).publish_state(d.fan_speed);
+        if (d.room_temp > 0.0f && d.room_temp < 50.0f) id(sensor_fan_room_temp).publish_state(d.room_temp);
+        if (d.water_temp > 0.0f && d.water_temp < 50.0f) id(sensor_fan_water_temp).publish_state(d.water_temp);
+        id(sensor_fan_humidity).publish_state(d.humidity);
+      }
+      return NAN;
+
+  - platform: template
+    id: sensor_fan_water_temp
+    name: "Aquarium water temperature"
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 2
+    icon: mdi:thermometer-water
+
+  - platform: template
+    id: sensor_fan_room_temp
+    name: "Aquarium room temperature"
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    icon: mdi:thermometer
+
+  - platform: template
+    id: sensor_fan_humidity
+    name: "Aquarium humidity"
+    unit_of_measurement: "%"
+    device_class: humidity
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: template
+    id: sensor_fan_fan_speed
+    name: "Fan speed"
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: mdi:fan

@@ -1,20 +1,20 @@
 # --- CO2 CONTROLLER ---
 
 #
-# Protocol afgeleid uit btsnoop HCI logs (2026-05-30):
+# Protocol derived from btsnoop HCI logs (2026-05-30):
 #
-# Connect:   AUTH → RTC → RTC → RESET_SCHEMA → start→ON → end→OFF
-# Activeren: RESET_SCHEMA → start→ON → end→OFF
-# Deactiveren: start→EMPTY → end→EMPTY
+# Connect:    AUTH → RTC → RTC → RESET_SCHEDULE → start→ON → end→OFF
+# Activate:   RESET_SCHEDULE → start→ON → end→OFF
+# Deactivate: start→EMPTY → end→EMPTY
 #
-# LET OP: de CO2-klep klikt fysiek bij elke connect (RESET_SCHEMA triggert actuatie).
-# Verbind daarom alleen als het echt nodig is — niet periodiek pollen.
+# NOTE: the CO2 valve physically clicks on every connect (RESET_SCHEDULE
+# triggers actuation). Only connect when genuinely needed — never poll.
 #
-# RESET_SCHEMA wist alle slots in het apparaat — geen old-waarden nodig bij tijdwijziging.
-# RTC wordt twee keer gestuurd (conform app-gedrag).
+# RESET_SCHEDULE clears every slot on the device, so no old values are needed
+# when a time changes. RTC is sent twice, matching the app's behaviour.
 
 globals:
-  - id: co2_schema_actief
+  - id: co2_schedule_active
     type: bool
     restore_value: true
     initial_value: 'true'
@@ -31,9 +31,9 @@ ble_client:
         - delay: 500ms
         - lambda: |-
             id(co2_device).prepare(
-              id(ntp_tijd).now(), id(co2_schema_actief),
-              id(fotoperiode_start).hour, id(fotoperiode_start).minute,
-              id(fotoperiode_eind).hour,  id(fotoperiode_eind).minute,
+              id(ntp_time).now(), id(co2_schedule_active),
+              id(photoperiod_start).hour, id(photoperiod_start).minute,
+              id(photoperiod_end).hour,  id(photoperiod_end).minute,
               (int)id(co2_prestart).state
             );
         - while:
@@ -46,52 +46,52 @@ ble_client:
                   characteristic_uuid: ${ble_tx}
                   value: !lambda return id(co2_device).next();
               - delay: 200ms
-        - switch.turn_off: co2_verbinding
-        - logger.log: "co2: klaar"
+        - switch.turn_off: co2_connection
+        - logger.log: "co2: done"
     on_disconnect:
       then:
-        - logger.log: "co2: verbinding verbroken"
+        - logger.log: "co2: connection lost"
 
 script:
-  - id: co2_verbind_als_klaar
+  - id: co2_connect_when_ready
     then:
       - if:
           condition:
-            lambda: return id(ha_verbonden);
+            lambda: return id(ha_connected);
           then:
-            - switch.turn_on: co2_verbinding
+            - switch.turn_on: co2_connection
 
 switch:
   - platform: ble_client
     ble_client_id: chihiros_co2
-    id: co2_verbinding
+    id: co2_connection
     internal: true
     restore_mode: RESTORE_DEFAULT_OFF
 
   - platform: template
-    name: "CO2 schema actief"
-    id: sw_co2_schema_actief
+    name: "CO2 schedule active"
+    id: sw_co2_schedule_active
     icon: mdi:molecule-co2
     restore_mode: RESTORE_DEFAULT_ON
-    lambda: return id(co2_schema_actief);
+    lambda: return id(co2_schedule_active);
     turn_on_action:
       - globals.set:
-          id: co2_schema_actief
+          id: co2_schedule_active
           value: 'true'
-      - script.execute: co2_verbind_als_klaar
+      - script.execute: co2_connect_when_ready
     turn_off_action:
       - globals.set:
-          id: co2_schema_actief
+          id: co2_schedule_active
           value: 'false'
-      - script.execute: co2_verbind_als_klaar
+      - script.execute: co2_connect_when_ready
 
 button:
   - platform: template
-    name: "CO2 schema versturen"
-    id: btn_co2_schema
+    name: "CO2 send schedule"
+    id: btn_co2_schedule
     icon: mdi:molecule-co2
     on_press:
-      - script.execute: co2_verbind_als_klaar
+      - script.execute: co2_connect_when_ready
 
   - platform: template
     name: "CO2 RTC sync"
@@ -99,7 +99,7 @@ button:
     icon: mdi:clock-sync
     on_press:
       - lambda: id(co2_device).set_rtc_only();
-      - script.execute: co2_verbind_als_klaar
+      - script.execute: co2_connect_when_ready
 
 sensor:
   - platform: ble_client
@@ -113,6 +113,6 @@ sensor:
     internal: true
     unit_of_measurement: ""
     lambda: |-
-      ESP_LOGI("co2", "Notificatie: %s", chihiros::hex_dump(x).c_str());
+      ESP_LOGI("co2", "Notification: %s", chihiros::hex_dump(x).c_str());
       if (x.size() >= 7) return (float)x[6];
       return NAN;

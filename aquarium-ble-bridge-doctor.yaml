@@ -1,27 +1,27 @@
 # --- DOCTOR MATE ---
 #
-# De Chihiros Doctor Mate meet waterkwaliteit (EC/TDS) en doseert automatisch.
+# The Chihiros Doctor Mate measures water quality (EC/TDS) and doses automatically.
 #
-# Verbindingsvolgorde bij elke BLE-connect:
-#   1. Auth        — standaard Chihiros handshake (0xa5)
-#   2. RTC sync    — klok synchroniseren (0x5a)
-#   3. TDS target  — doelwaarde EC in µS/cm, cmd=0x01 data=[0x00, ec] (positie 1)
-#   4. Volume      — tankinhoud in liters × 2, cmd=0x01 data=[0x00, vol] (positie 2)
+# Connection sequence on every BLE connect:
+#   1. Auth        — standard Chihiros handshake (0xa5)
+#   2. RTC sync    — sync the clock (0x5a)
+#   3. TDS target  — target EC in µS/cm, cmd=0x01 data=[0x00, ec] (position 1)
+#   4. Volume      — tank volume in litres x 2, cmd=0x01 data=[0x00, vol] (position 2)
 #
-# BELANGRIJK: TDS en Volume hebben exact hetzelfde frameformaat (cmd=0x01, data[0]=0x00).
-# Het apparaat onderscheidt ze UITSLUITEND op volgorde: 1e = TDS, 2e = Volume.
-# Altijd beide sturen bij elke settings-update, altijd in deze volgorde.
+# IMPORTANT: TDS and Volume share exactly the same frame format (cmd=0x01, data[0]=0x00).
+# The device tells them apart ONLY by order: 1st = TDS, 2nd = Volume.
+# Always send both on every settings update, always in this order.
 #
 # EC encoding: µS/cm = ppm / 0.4  (100 ppm = 250 µS/cm = 0xfa, max ~102 ppm)
-# Volume encoding: liters × 2     (50 L = 0x64, 100 L = 0xc8, max ~127 L)
+# Volume encoding: litres x 2     (50 L = 0x64, 100 L = 0xc8, max ~127 L)
 #
-# Profielen (TDS presets):
-#   Plant:   80 ppm → EC 200 µS/cm → 0xc8
-#   Vis:     93 ppm → EC 233 µS/cm → 0xe9
-#   Garnaal: 66 ppm → EC 166 µS/cm → 0xa6
+# Profiles (TDS presets):
+#   Plant:  80 ppm → EC 200 µS/cm → 0xc8
+#   Fish:   93 ppm → EC 233 µS/cm → 0xe9
+#   Shrimp: 66 ppm → EC 166 µS/cm → 0xa6
 #
-# Notificaties van het apparaat (na auth):
-#   byte[5] = EC meting (µS/cm) — vermoedelijk, bevestig via logs
+# Notifications from the device (after auth):
+#   byte[5] = EC reading (µS/cm) — presumed, confirm via logs
 
 globals:
   - id: doctor_device
@@ -36,7 +36,7 @@ ble_client:
         - delay: 500ms
         - lambda: |-
             id(doctor_device).prepare(
-              id(ntp_tijd).now(),
+              id(ntp_time).now(),
               id(num_doctor_tds).state,
               id(num_doctor_volume).state
             );
@@ -50,32 +50,32 @@ ble_client:
                   characteristic_uuid: ${ble_tx}
                   value: !lambda return id(doctor_device).next();
               - delay: 200ms
-        - switch.turn_off: doctor_verbinding
-        - logger.log: "doctor: klaar"
+        - switch.turn_off: doctor_connection
+        - logger.log: "doctor: done"
     on_disconnect:
       then:
-        - logger.log: "doctor: verbinding verbroken"
+        - logger.log: "doctor: connection lost"
 
 script:
-  - id: doctor_verbind_als_klaar
+  - id: doctor_connect_when_ready
     then:
       - if:
           condition:
-            lambda: return id(ha_verbonden);
+            lambda: return id(ha_connected);
           then:
-            - switch.turn_on: doctor_verbinding
+            - switch.turn_on: doctor_connection
 
   - id: doctor_debounce
     mode: restart
     then:
       - delay: 1500ms
-      - script.execute: doctor_verbind_als_klaar
+      - script.execute: doctor_connect_when_ready
 
 
 switch:
   - platform: ble_client
     ble_client_id: chihiros_doctor
-    id: doctor_verbinding
+    id: doctor_connection
     internal: true
     restore_mode: RESTORE_DEFAULT_OFF
 
@@ -86,7 +86,7 @@ button:
     icon: mdi:clock-sync
     on_press:
       - lambda: id(doctor_device).set_rtc_only();
-      - script.execute: doctor_verbind_als_klaar
+      - script.execute: doctor_connect_when_ready
 
 number:
   - platform: template
@@ -119,8 +119,8 @@ number:
 
 select:
   - platform: template
-    name: "Doctor Mate profiel"
-    id: sel_doctor_profiel
+    name: "Doctor Mate profile"
+    id: sel_doctor_profile
     icon: mdi:fish
     restore_value: true
     optimistic: true
@@ -131,7 +131,7 @@ select:
       - "Manueel"
     initial_option: "Manueel"
     on_value:
-      # Profiel-keuze past de TDS-waarde aan; num_doctor_tds.on_value triggert daarna de verbinding
+      # Choosing a profile sets the TDS value; num_doctor_tds.on_value then triggers the connection
       - if:
           condition:
             lambda: return x == "Plant (80 ppm)";
@@ -160,13 +160,13 @@ sensor:
     ble_client_id: chihiros_doctor
     service_uuid: ${ble_service}
     characteristic_uuid: ${ble_rx}
-    id: doctor_notificatie
-    name: "Doctor Mate Notificatie"
+    id: doctor_notification
+    name: "Doctor Mate notification"
     notify: true
     internal: true
     unit_of_measurement: ""
     lambda: |-
-      ESP_LOGI("doctor", "Notificatie (%d bytes): %s", (int)x.size(), chihiros::hex_dump(x).c_str());
+      ESP_LOGI("doctor", "Notification (%d bytes): %s", (int)x.size(), chihiros::hex_dump(x).c_str());
       if (x.size() >= 6 && x[5] > 0 && x[5] != 0xff) {
         id(sensor_doctor_ec).publish_state((float)x[5]);
       }
