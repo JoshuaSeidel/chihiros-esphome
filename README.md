@@ -102,22 +102,45 @@ You can also find MACs via:
 
 > **One device per type.** This configuration assumes exactly one of each device type. If you have multiple WRGB2 lights, you would need to duplicate the package and rename all IDs.
 
-### Step 3 — Enable the devices you want
+### Step 3 — Pick a top-level config
 
-In `aquarium-ble-bridge.yaml`, uncomment the packages you need:
+Two ready-made entry points:
+
+| File | Builds |
+|---|---|
+| `aquarium-ble-bridge.yaml` | every supported device |
+| `aquarium-ble-bridge-wrgb2-only.yaml` | one WRGB II / WRGB II Pro, nothing else |
+
+Both are thin glue over the same packages. The board, radios, network and
+the `ha_connected` gate live in `aquarium-ble-bridge-core.yaml`; each device
+is its own package; `aquarium-ble-bridge-discover.yaml` is the optional
+MAC-discovery log.
+
+To build for your own subset, copy either file and edit its `packages:` and
+its `schedule_changed` script — that script is the one place that lists which
+devices get notified when the photoperiod moves, so a config that does not
+load the CO2 package never references a CO2 script:
 
 ```yaml
 packages:
-  schedule:   !include aquarium-ble-bridge-schedule.yaml     # photoperiod times (shared by CO2 + WRGB2)
-  co2:        !include aquarium-ble-bridge-co2.yaml
-  stirrer:    !include aquarium-ble-bridge-stirrer.yaml
-  fan:        !include aquarium-ble-bridge-fan.yaml
-  doctor:     !include aquarium-ble-bridge-doctor.yaml
-  wrgb2:      !include aquarium-ble-bridge-wrgb2.yaml
-  dosing:     !include aquarium-ble-bridge-dosing.yaml
+  core:     !include aquarium-ble-bridge-core.yaml
+  discover: !include aquarium-ble-bridge-discover.yaml   # optional
+  schedule: !include aquarium-ble-bridge-schedule.yaml   # photoperiod times
+  wrgb2:    !include aquarium-ble-bridge-wrgb2.yaml
+  # co2:    !include aquarium-ble-bridge-co2.yaml
+  # ...
+
+script:
+  - id: schedule_changed
+    mode: restart
+    then:
+      - delay: 1500ms
+      - script.execute: wrgb2_connect_when_ready
+      # add more devices here, staggered by ~3s each
 ```
 
-`schedule.yaml` defines the shared `photoperiod_start` / `photoperiod_end` datetimes and the `co2_prestart` offset — used by both CO2 and WRGB2.
+`schedule.yaml` owns only `photoperiod_start` / `photoperiod_end`. The CO2
+`co2_prestart` offset lives in the CO2 package, since it is a CO2 concern.
 
 ### Step 4 — Flash
 

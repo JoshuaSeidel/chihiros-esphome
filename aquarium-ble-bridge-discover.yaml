@@ -1,0 +1,30 @@
+# --- DISCOVERY ---
+#
+# Logs every Chihiros device in BLE range that is not already configured,
+# with a hint about which substitution to put its MAC in. Flash once, read
+# the log, fill in the MAC -- no separate BLE scanner app needed.
+#
+# ${known_macs} is a comma-separated list of the MACs already configured, so
+# they stop showing up once set. The top-level file defines it.
+#
+# Optional. Leave it out of a finished build if you want a quieter log.
+
+esp32_ble_tracker:
+  on_ble_advertise:
+    - then:
+        - lambda: |-
+            std::string name = x.get_name();
+            std::string mac = x.address_str();
+            if (name.rfind("DY", 0) != 0) return;
+            if (std::string("${known_macs}").find(mac) != std::string::npos) return;
+            // Identify the device type from the name prefix (DY{type}{MAC_without_colons})
+            const char* type = "Unknown type";
+            if      (name.rfind("DYNT90", 0) == 0) type = "WRGB2 light         -> set as wrgb2_mac";
+            else if (name.rfind("DYWPR",  0) == 0) type = "WRGB2 Pro light     -> set as wrgb2_mac, wrgb2_pro: true";
+            else if (name.rfind("DYPCO2", 0) == 0) type = "CO2 controller      -> set as co2_mac";
+            else if (name.rfind("DYMIX",  0) == 0) type = "Magnetic stirrer    -> set as stirrer_mac";
+            else if (name.rfind("DYNFAN", 0) == 0) type = "Cooling fan         -> set as fan_mac";
+            else if (name.rfind("DYNDOC", 0) == 0) type = "Doctor Mate         -> set as doctor_mac";
+            else if (name.rfind("DYDOSE", 0) == 0) type = "Dosing pump         -> set as dosing_mac";
+            ESP_LOGI("ble_scan", "Chihiros found: %s | MAC=%s RSSI=%d",
+              type, mac.c_str(), x.get_rssi());

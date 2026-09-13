@@ -1,0 +1,42 @@
+# --- LIGHT-ONLY BRIDGE: one WRGB II / WRGB II Pro, nothing else ---
+#
+# The same core as the full bridge with only the light package loaded. Use
+# this if the light is the only Chihiros device you own; it does not carry
+# CO2, stirrer, fan, Doctor Mate or dosing entities you would never use.
+#
+# To build this from another repo's ESPHome dashboard, pull the same
+# package list over git and swap external_components to type: git -- see
+# the tank-monitor project's tank-monitor-lg-light-remote.yaml.
+
+substitutions:
+  name: aquarium-light-bridge
+  friendly_name: aquarium-light-bridge
+  # Flash once with discovery enabled and read the MAC from the log. A Pro
+  # advertises as DYWPRO30-90 or DYWPR120 (the 120 drops the O).
+  wrgb2_mac:   "CF:20:3B:6D:17:C1"
+  known_macs:  "CF:20:3B:6D:17:C1"
+  # "true" for a WRGB II Pro (four channels), "false" for a regular WRGB II.
+  wrgb2_pro:   "true"
+  ble_service: "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+  ble_tx:      "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+  ble_rx:      "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [chihiros_ble]
+
+packages:
+  core:     !include aquarium-ble-bridge-core.yaml
+  discover: !include aquarium-ble-bridge-discover.yaml
+  schedule: !include aquarium-ble-bridge-schedule.yaml
+  wrgb2:    !include aquarium-ble-bridge-wrgb2.yaml
+
+script:
+  # Photoperiod moved: only the light to tell.
+  - id: schedule_changed
+    mode: restart
+    then:
+      - delay: 1500ms
+      - script.execute: wrgb2_connect_when_ready

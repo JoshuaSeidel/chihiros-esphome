@@ -1,0 +1,90 @@
+# --- CORE ---
+#
+# Everything a Chihiros bridge needs that is NOT a device: board, radios,
+# network, time, and the ha_connected gate every device package waits on
+# before opening a BLE connection.
+#
+# Deliberately contains no substitutions, no external_components and no
+# packages: -- those belong to the top-level file that includes this, so
+# the same core can be pulled locally (type: local) or from git (type: git)
+# and can carry one device or all of them.
+#
+# Every device package assumes these exist:
+#   ${ble_service} ${ble_tx} ${ble_rx}   Nordic UART UUIDs (top-level substitutions)
+#   id(ha_connected)                     set below from the native API
+#   id(ntp_time)                         set below
+#   script schedule_changed              DEFINED BY THE TOP-LEVEL FILE -- it lists
+#                                        which devices to notify when the photoperiod
+#                                        moves, so a light-only build does not try to
+#                                        call a CO2 script that was never loaded.
+
+chihiros_ble:
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+# ESP32-S3 with 16 MB flash. BLE 5.0 is REQUIRED: Chihiros devices use
+# extended advertising and a classic ESP32 (BLE 4.2) will never see them.
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_BT_CTRL_BLE_MAX_ACT: "10"
+
+# Secret key names match the tank-monitor project so one secrets.yaml serves
+# every board in the same ESPHome dashboard.
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: NONE
+  post_connect_roaming: false
+  reboot_timeout: 0s
+
+logger:
+  level: DEBUG
+  hardware_uart: USB_SERIAL_JTAG
+  logs:
+    esp32_ble_tracker: DEBUG
+    ble_client: DEBUG
+
+globals:
+  # Every device's connect_when_ready script checks this first. Nothing
+  # opens a BLE connection until Home Assistant is attached, so a reboot
+  # does not fan out to every device at once and trip HCI 0x07.
+  - id: ha_connected
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+api:
+  encryption:
+    key: !secret tank_monitor_api_key
+  on_client_connected:
+    - lambda: id(ha_connected) = true;
+
+ota:
+  - platform: esphome
+    password: !secret tank_monitor_ota_password
+
+time:
+  - platform: sntp
+    id: ntp_time
+    timezone: !secret timezone
+    servers:
+      - 0.pool.ntp.org
+      - 1.pool.ntp.org
+
+esp32_ble:
+  io_capability: none
+  max_connections: 8
+
+esp32_ble_tracker:
+  scan_parameters:
+    active: true
+    interval: 320ms
+    window: 60ms
+    continuous: true

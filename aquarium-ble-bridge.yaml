@@ -1,30 +1,37 @@
-# --- OVERVIEW ---
-# Chihiros BLE bridge — CO2 controller + magnetic stirrer + cooling fan + Doctor Mate + WRGB2
-# Configuration is split into one package per device:
-#   aquarium-ble-bridge-co2.yaml
-#   aquarium-ble-bridge-stirrer.yaml
-#   aquarium-ble-bridge-fan.yaml
-#   aquarium-ble-bridge-doctor.yaml
-#   aquarium-ble-bridge-wrgb2.yaml
+# --- FULL BRIDGE: every supported Chihiros device ---
+#
+# Chihiros BLE bridge — CO2 controller + magnetic stirrer + cooling fan +
+# Doctor Mate + WRGB2 light + dosing pump.
+#
+# This file is only glue. The board, radios and network live in
+# aquarium-ble-bridge-core.yaml; each device is its own package. To build
+# for a subset of devices, copy this file and drop the packages you do not
+# own -- see aquarium-ble-bridge-wrgb2-only.yaml for a light-only example.
+#
+# The one piece of logic here is `schedule_changed`: when the photoperiod
+# moves, which devices get told, and in what order. Connections are
+# staggered because two simultaneous BLE connects trip HCI 0x07.
 
 substitutions:
   name: aquarium-ble-bridge
   friendly_name: aquarium-ble-bridge
-  # MAC addresses
-  co2_mac: "CC:A0:27:8E:79:E9"
+  # MAC addresses -- flash once with discovery enabled and read them from the log
+  co2_mac:     "CC:A0:27:8E:79:E9"
   stirrer_mac: "EC:DE:A6:A0:61:1D"
-  fan_mac: "D7:65:2F:EF:CC:BB"
-  doctor_mac: "CC:A0:E9:07:34:C6"
-  wrgb2_mac:  "CF:20:3B:6D:17:C1"
+  fan_mac:     "D7:65:2F:EF:CC:BB"
+  doctor_mac:  "CC:A0:E9:07:34:C6"
+  wrgb2_mac:   "CF:20:3B:6D:17:C1"
+  dosing_mac:  "F1:C0:D0:B8:E9:5A"
+  # Everything above, comma-separated, so discovery stops reporting them.
+  known_macs:  "CC:A0:27:8E:79:E9,EC:DE:A6:A0:61:1D,D7:65:2F:EF:CC:BB,CC:A0:E9:07:34:C6,CF:20:3B:6D:17:C1,F1:C0:D0:B8:E9:5A"
   # The WRGB II Pro (DYWPRO30-90 / DYWPR120) has a fourth, independent white
   # channel. Set to "true" for a Pro; "false" leaves every frame byte-for-byte
   # identical for a regular WRGB II.
-  wrgb2_pro:  "false"
-  dosing_mac: "F1:C0:D0:B8:E9:5A"
+  wrgb2_pro:   "false"
   # Nordic UART Service UUIDs (shared by every Chihiros device)
   ble_service: "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-  ble_tx: "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
-  ble_rx: "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+  ble_tx:      "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+  ble_rx:      "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
 external_components:
   - source:
@@ -32,91 +39,9 @@ external_components:
       path: components
     components: [chihiros_ble]
 
-chihiros_ble:
-
-esphome:
-  name: ${name}
-  friendly_name: ${friendly_name}
-
-esp32:
-  board: esp32-s3-devkitc-1
-  variant: esp32s3
-  flash_size: 16MB
-  framework:
-    type: esp-idf
-    sdkconfig_options:
-      CONFIG_BT_CTRL_BLE_MAX_ACT: "10"
-
-wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
-  power_save_mode: NONE
-  post_connect_roaming: false
-  reboot_timeout: 0s
-
-logger:
-  level: DEBUG
-  hardware_uart: USB_SERIAL_JTAG
-  logs:
-    esp32_ble_tracker: DEBUG
-    ble_client: DEBUG
-
-globals:
-  - id: ha_connected
-    type: bool
-    restore_value: false
-    initial_value: 'false'
-
-api:
-  encryption:
-    key: !secret tank_monitor_api_key
-  on_client_connected:
-    - lambda: id(ha_connected) = true;
-
-ota:
-  - platform: esphome
-    password: !secret tank_monitor_ota_password
-
-time:
-  - platform: sntp
-    id: ntp_time
-    timezone: !secret timezone
-    servers:
-      - 0.nl.pool.ntp.org
-      - 1.nl.pool.ntp.org
-
-esp32_ble:
-  io_capability: none
-  max_connections: 8
-
-esp32_ble_tracker:
-  scan_parameters:
-    active: true
-    interval: 320ms
-    window: 60ms
-    continuous: true
-  on_ble_advertise:
-    - then:
-        - lambda: |-
-            std::string name = x.get_name();
-            std::string mac = x.address_str();
-            if (name.rfind("DY", 0) != 0) return;
-            if (mac == "${co2_mac}" || mac == "${stirrer_mac}" ||
-                mac == "${fan_mac}" || mac == "${doctor_mac}" ||
-                mac == "${wrgb2_mac}" || mac == "${dosing_mac}") return;
-            // Identify the device type from the name prefix (DY{type}{MAC_without_colons})
-            const char* type = "Unknown type";
-            if      (name.rfind("DYNT90", 0) == 0) type = "WRGB2 light         -> set as wrgb2_mac";
-            else if (name.rfind("DYWPR",  0) == 0) type = "WRGB2 Pro light     -> set as wrgb2_mac, wrgb2_pro: true";
-            else if (name.rfind("DYPCO2", 0) == 0) type = "CO2 controller      -> set as co2_mac";
-            else if (name.rfind("DYMIX",  0) == 0) type = "Magnetic stirrer    -> set as stirrer_mac";
-            else if (name.rfind("DYNFAN", 0) == 0) type = "Cooling fan         -> set as fan_mac";
-            else if (name.rfind("DYNDOC", 0) == 0) type = "Doctor Mate         -> set as doctor_mac";
-            else if (name.rfind("DYDOSE", 0) == 0) type = "Dosing pump         -> set as dosing_mac";
-            ESP_LOGI("ble_scan", "Chihiros found: %s | MAC=%s RSSI=%d",
-              type, mac.c_str(), x.get_rssi());
-
 packages:
+  core:     !include aquarium-ble-bridge-core.yaml
+  discover: !include aquarium-ble-bridge-discover.yaml
   schedule: !include aquarium-ble-bridge-schedule.yaml
   stirrer:  !include aquarium-ble-bridge-stirrer.yaml
   fan:      !include aquarium-ble-bridge-fan.yaml
@@ -124,3 +49,13 @@ packages:
   wrgb2:    !include aquarium-ble-bridge-wrgb2.yaml
   co2:      !include aquarium-ble-bridge-co2.yaml
   dosing:   !include aquarium-ble-bridge-dosing.yaml
+
+script:
+  # Photoperiod moved: update CO2 first, then the light 3s later.
+  - id: schedule_changed
+    mode: restart
+    then:
+      - delay: 1500ms
+      - script.execute: co2_connect_when_ready
+      - delay: 3000ms
+      - script.execute: wrgb2_connect_when_ready
