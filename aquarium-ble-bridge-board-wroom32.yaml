@@ -1,0 +1,25 @@
+# --- BOARD: classic ESP32 (WROOM-32 devkit), 4 MB flash ---
+#
+# BUILDS AND BOOTS. WHETHER IT SEES THE LIGHT IS AN OPEN QUESTION.
+#
+# The classic ESP32 is BLE 4.2. The upstream project states that Chihiros
+# devices use BLE 5.0 extended advertising and that a classic ESP32 will not
+# detect them. That is an empirical claim from the author's hardware, not a
+# datasheet fact -- most BLE 5 peripherals also emit legacy advertisements
+# for old phones, and whether a given Chihiros fixture does is unknown.
+#
+# So this board package exists to answer that question in sixty seconds
+# rather than by argument: flash it with the discover package loaded, watch
+# the log, and either
+#     [ble_scan] Chihiros found: WRGB2 Pro light ... MAC=...
+# appears, or it does not. If it does not, the S3 is not optional.
+#
+# 4 MB flash. The single-light bridge fits comfortably (~1.2 MB); the full
+# six-device bridge has not been tried here and probably should not be.
+# The logger uses UART0, the default -- there is no USB_SERIAL_JTAG on
+# this chip, and asking for one fails the build.
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf

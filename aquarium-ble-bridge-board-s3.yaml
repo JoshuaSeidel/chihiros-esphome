@@ -1,0 +1,18 @@
+# --- BOARD: ESP32-S3, 16 MB flash ---
+#
+# The reference target. BLE 5.0, so it sees Chihiros extended advertising;
+# 16 MB flash, so the full multi-device bridge fits with room for OTA.
+# ESP32-S3-DevKitC-1 N16R8 or equivalent.
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_BT_CTRL_BLE_MAX_ACT: "10"
+
+logger:
+  # Native USB on the S3 -- the log comes out the same port you flash on.
+  hardware_uart: USB_SERIAL_JTAG

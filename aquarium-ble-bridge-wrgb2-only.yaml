@@ -42,6 +42,9 @@ packages:
     url: https://github.com/JoshuaSeidel/chihiros-esphome
     ref: main
     files:
+      # Pick ONE board. -board-wroom32.yaml builds for a classic ESP32 but
+      # see that file for why it may not detect the light.
+      - aquarium-ble-bridge-board-s3.yaml
       - aquarium-ble-bridge-core.yaml
       # Optional: logs any Chihiros device in range not in known_macs.
       # Keep for the first flash to find the MAC; drop later for a quiet log.

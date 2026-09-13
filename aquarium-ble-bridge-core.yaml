@@ -10,6 +10,7 @@
 # and can carry one device or all of them.
 #
 # Every device package assumes these exist:
+#   a board package                      -board-s3.yaml or -board-wroom32.yaml
 #   ${ble_service} ${ble_tx} ${ble_rx}   Nordic UART UUIDs (top-level substitutions)
 #   id(ha_connected)                     set below from the native API
 #   id(ntp_time)                         set below
@@ -24,16 +25,9 @@ esphome:
   name: ${name}
   friendly_name: ${friendly_name}
 
-# ESP32-S3 with 16 MB flash. BLE 5.0 is REQUIRED: Chihiros devices use
-# extended advertising and a classic ESP32 (BLE 4.2) will never see them.
-esp32:
-  board: esp32-s3-devkitc-1
-  variant: esp32s3
-  flash_size: 16MB
-  framework:
-    type: esp-idf
-    sdkconfig_options:
-      CONFIG_BT_CTRL_BLE_MAX_ACT: "10"
+# NO esp32: block here. The board is its own package -- see
+# aquarium-ble-bridge-board-s3.yaml and -board-wroom32.yaml -- so the same
+# core builds for either chip. The top-level file picks exactly one.
 
 # Secret key names match the tank-monitor project so one secrets.yaml serves
 # every board in the same ESPHome dashboard.
@@ -46,7 +40,7 @@ wifi:
 
 logger:
   level: DEBUG
-  hardware_uart: USB_SERIAL_JTAG
+  # hardware_uart is board-specific and lives in the board package.
   logs:
     esp32_ble_tracker: DEBUG
     ble_client: DEBUG

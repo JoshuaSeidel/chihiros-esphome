@@ -40,6 +40,7 @@ external_components:
     components: [chihiros_ble]
 
 packages:
+  board:    !include aquarium-ble-bridge-board-s3.yaml
   core:     !include aquarium-ble-bridge-core.yaml
   discover: !include aquarium-ble-bridge-discover.yaml
   schedule: !include aquarium-ble-bridge-schedule.yaml

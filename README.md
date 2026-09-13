@@ -111,10 +111,15 @@ Two ready-made entry points:
 | `aquarium-ble-bridge.yaml` | every supported device |
 | `aquarium-ble-bridge-wrgb2-only.yaml` | one WRGB II / WRGB II Pro, nothing else |
 
-Both are thin glue over the same packages. The board, radios, network and
-the `ha_connected` gate live in `aquarium-ble-bridge-core.yaml`; each device
-is its own package; `aquarium-ble-bridge-discover.yaml` is the optional
-MAC-discovery log.
+Both are thin glue over the same packages. Radios, network and the
+`ha_connected` gate live in `aquarium-ble-bridge-core.yaml`; the chip is a
+separate board package; each device is its own package;
+`aquarium-ble-bridge-discover.yaml` is the optional MAC-discovery log.
+
+| Board package | Chip | Notes |
+|---|---|---|
+| `aquarium-ble-bridge-board-s3.yaml` | ESP32-S3, 16 MB | **Reference target.** BLE 5.0. |
+| `aquarium-ble-bridge-board-wroom32.yaml` | classic ESP32, 4 MB | Builds and boots. BLE 4.2 — may not detect Chihiros extended advertising. Flash with discovery on and check the log. |
 
 To build for your own subset, copy either file and edit its `packages:` and
 its `schedule_changed` script — that script is the one place that lists which
@@ -123,6 +128,7 @@ load the CO2 package never references a CO2 script:
 
 ```yaml
 packages:
+  board:    !include aquarium-ble-bridge-board-s3.yaml   # or -board-wroom32.yaml
   core:     !include aquarium-ble-bridge-core.yaml
   discover: !include aquarium-ble-bridge-discover.yaml   # optional
   schedule: !include aquarium-ble-bridge-schedule.yaml   # photoperiod times
@@ -167,13 +173,13 @@ This connect → configure → disconnect pattern is expected and correct. Avoid
 
 ## Hardware
 
-- **Board**: ESP32-S3-N16R8 (`esp32-s3-devkitc-1`, `variant: esp32s3`, `flash_size: 16MB`)
+- **Board**: ESP32-S3-N16R8 (`aquarium-ble-bridge-board-s3.yaml`). A classic ESP32 board package exists too — see the note below.
 - **Framework**: `esp-idf` (required for reliable multi-client BLE)
 - **BLE connections**: up to 8 (`max_connections: 8`, `CONFIG_BT_CTRL_BLE_MAX_ACT: "10"`)
 - **BLE scan**: `interval: 320ms`, `window: 60ms`, continuous
-- **Time**: SNTP (`platform: sntp`, id `ntp_time`) — syncs directly from NTP servers, no HA in between. Timezone: `CET-1CEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00`. `ntp_time.now().hour` always returns correct local time.
+- **Time**: SNTP (`platform: sntp`, id `ntp_time`) — syncs directly from NTP servers, no HA in between. Timezone from `!secret timezone`. `ntp_time.now().hour` always returns correct local time.
 
-> **BLE 5.0 required.** Chihiros devices use BLE 5.0 extended advertising — a classic ESP32 (BLE 4.2) will not detect them at all. Use an **ESP32-S3** (or ESP32-C3/C6). The S3 is recommended for its extra RAM, which is needed when running the BLE scanner alongside multiple client connections.
+> **BLE 5.0 recommended; whether it is *required* is untested per fixture.** The original author found that Chihiros devices use BLE 5.0 extended advertising and that a classic ESP32 (BLE 4.2) did not detect them. Many BLE 5 peripherals also emit legacy advertisements, so this may vary by device. `aquarium-ble-bridge-board-wroom32.yaml` lets you find out in a minute: flash a classic ESP32 with the discover package loaded and watch for `Chihiros found` in the log. If it never appears, use an **ESP32-S3**. The S3 is the reference target regardless, for its extra RAM when running the scanner alongside several client connections.
 
 ## Supported Devices
 
