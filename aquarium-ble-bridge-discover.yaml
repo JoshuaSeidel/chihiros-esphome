@@ -14,7 +14,10 @@ esp32_ble_tracker:
     - then:
         - lambda: |-
             std::string name = x.get_name();
-            std::string mac = x.address_str();
+            // address_str() is deprecated (removed in ESPHome 2027.2); the
+            // replacement writes into a caller-supplied buffer.
+            char macbuf[18];
+            std::string mac = x.address_str_to(macbuf);
             if (name.rfind("DY", 0) != 0) return;
             if (std::string("${known_macs}").find(mac) != std::string::npos) return;
             // Identify the device type from the name prefix (DY{type}{MAC_without_colons})
