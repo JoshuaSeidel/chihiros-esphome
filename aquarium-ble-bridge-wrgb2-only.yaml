@@ -1,12 +1,17 @@
 # --- LIGHT-ONLY BRIDGE: one WRGB II / WRGB II Pro, nothing else ---
 #
-# The same core as the full bridge with only the light package loaded. Use
-# this if the light is the only Chihiros device you own; it does not carry
-# CO2, stirrer, fan, Doctor Mate or dosing entities you would never use.
+# A STANDALONE REMOTE CONFIG. Copy this one file into any ESPHome dashboard;
+# everything else -- the C++ protocol helpers and every package -- is pulled
+# from this repository's main branch at build time, refreshed on every build.
+# Nothing needs to live next to it except secrets.yaml.
 #
-# To build this from another repo's ESPHome dashboard, pull the same
-# package list over git and swap external_components to type: git -- see
-# the tank-monitor project's tank-monitor-lg-light-remote.yaml.
+# It carries only the light. No CO2, stirrer, fan, Doctor Mate or dosing
+# entities you would never use. For the full bridge, or for local
+# development against the working tree, use aquarium-ble-bridge.yaml.
+#
+# Secret key names match the tank-monitor project:
+#   wifi_ssid, wifi_password, timezone, tank_monitor_ota_password,
+#   tank_monitor_api_key  (openssl rand -base64 32)
 
 substitutions:
   name: aquarium-light-bridge
@@ -21,17 +26,29 @@ substitutions:
   ble_tx:      "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
   ble_rx:      "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
+# Pulled from git, not local: this file has to work when it is the ONLY
+# file in the dashboard. refresh 0s so a push to main is all the next build
+# needs -- the default of 1d would silently build yesterday's code.
 external_components:
   - source:
-      type: local
-      path: components
+      type: git
+      url: https://github.com/JoshuaSeidel/chihiros-esphome
+      ref: main
     components: [chihiros_ble]
+    refresh: 0s
 
 packages:
-  core:     !include aquarium-ble-bridge-core.yaml
-  discover: !include aquarium-ble-bridge-discover.yaml
-  schedule: !include aquarium-ble-bridge-schedule.yaml
-  wrgb2:    !include aquarium-ble-bridge-wrgb2.yaml
+  chihiros:
+    url: https://github.com/JoshuaSeidel/chihiros-esphome
+    ref: main
+    files:
+      - aquarium-ble-bridge-core.yaml
+      # Optional: logs any Chihiros device in range not in known_macs.
+      # Keep for the first flash to find the MAC; drop later for a quiet log.
+      - aquarium-ble-bridge-discover.yaml
+      - aquarium-ble-bridge-schedule.yaml
+      - aquarium-ble-bridge-wrgb2.yaml
+    refresh: 0s
 
 script:
   # Photoperiod moved: only the light to tell.
